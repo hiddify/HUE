@@ -1,7 +1,7 @@
 # Product Requirements Document (PRD) - Hiddify Usage Engine (HUE)
 
 ## 1. Overview
-Hiddify Usage Engine (HUE) is a protocol-agnostic usage tracking and subscription control plane. It is designed to manage user consumption, enforce package limits, and provide granular reporting across multiple nodes and various protocols (**Xray/Singbox/PPP/PPTP/SSTP/L2TP/IPSec/OpenVPN/Vless/Trojan/Shadowsocks/VMess/WireGuard**) without being tied to a specific panel or service.
+Hiddify Usage Engine (HUE) is a protocol-agnostic usage tracking and subscription control plane. It is designed to manage user consumption, enforce package limits, and provide granular reporting across multiple nodes and various protocols (**Xray/Singbox/PPP/PPTP/SSTP/L2TP/IPSec/OpenVPN/Vless/Trojan/Shadowsocks/VMess/WireGuard/RADIUS**) without being tied to a specific panel or service.
 
 ## 2. Core Entities & Data Model
 
@@ -40,58 +40,58 @@ Any server hosting services.
 - **Reset Day**: Scheduled reset point.
 - **Current Upload & Download**: Aggregate counters.
 - **Geo Information**: country, city, isp.
-
-- **History Storage**: Node usage history is stored in a separate db.
-
+- **History Storage**: Node usage history is stored in a **separate database** to keep the core DB small and fast.
 
 ### 2.4 Service
 Specific protocol instance on a Node.
 - **UUID / Secret Key**: For authentication.
 - **Node ID**: Parent node identification.
-- **Allowed Auth Methods**: [`uuid`, `password`, `pubkey`, etc.] sent to the service.
+- **Allowed Auth Methods**: [`uuid`, `password`, `pubkey`, etc.] visible to the service.
 - **Callback URL** (optional): For pushing real-time usage.
-
-- **History Storage**: Service usage history is stored in a separate db.
+- **History Storage**: Service usage history is stored in a **separate database**.
 
 ## 3. Functional Requirements
 
 ### 3.1 Usage Tracking
 - **Unified Reporting**: Standardized format for ALL protocols.
 - **Reporting Intervals**: Services push or Core pulls usage every $N$ seconds/minutes.
-- **Granular Tagging**: Events include `tags` (vless, wireguard), `service` (xray-usage-service), and `node` IDs.
-- **Geo Extraction**: Raw IPs are used for session counting and Geo-metadata (MaxMind) extraction, then discarded. **Zero Raw-IP Retention** policy items are deleted immediately after processing without any logging.
+- **Granular Tagging**: Events include `tags` (e.g., `vless`, `wireguard`) `service`, and `node` are extracted automatically in the core.
+- **Geo Extraction**: Raw IPs are used for session counting and Geo-metadata (MaxMind) extraction, then discarded. **Zero Raw-IP Retention** policy: item is deleted immediately after processing without any logging.
 
 ### 3.2 Quota & Enforcement
 - **Hard Limits**: On quota breach, status becomes `suspended`. Disconnect events are **batched** for performance.
 - **Concurrent Session Enforcement**: Unique IPs active within $X$ seconds are counted.
-- **Penalty Logic**: Exceeding `max_concurrent` triggers a temporary penalty (disconnect for $N$ minutes), logged but not permanent in DB.
-- **Locking Model**: Fine-grained locking. Locks apply only to the specific service, node, or user being modified, never the entire system.
+- **Penalty Logic**: Exceeding `max_concurrent` triggers a temporary penalty (disconnect for $N$ minutes), logged in-memory but not permanent in DB.
+- **Locking Model**: Fine-grained locking. Locks apply only to the specific service, node, or user being modified.
 
 ### 3.3 Event Sourcing Model
-All state changes are captured as events for audit, replay, and consistency:
+All state changes are captured as events for audit and consistency:
 - `USER_CONNECTED`, `USER_DISCONNECTED`
-- `USAGE_RECORDED`
-- `PACKAGE_EXPIRED` / `PACKAGE_UPDATED`
-- `NODE_RESET`
+- `USAGE_RECORDED`, `PACKAGE_EXPIRED`, `NODE_RESET`.
 
-## 4. Technical Architecture
+## 4. Technical Architecture & Database Strategy
 
-### 4.1 Performance & Overhead
-- **Efficiency Goal**: Extremely low CPU/Memory footprint. Small deployments (100 users) must run without heavy database overhead.
-- **Data Persistence**: 
-    - **Usage Data**: Cached in-memory. Loss of 5 minutes of usage is acceptable.
-    - **Metadata Changes**: (Quota changes, status updates) must be written to DB **immediately**.
-- **Configuration**: All settings configurable via **Environment Variables** (ENV).
+### 4.1 Low-Overhead Database Strategy (for 1000+ Users)
+To achieve high speed, low memory footprint, and minimal I/O:
+- **Database Separation**:
+    - **UserDB (SQLite)**: Stores only metadata, current status, and active counters. Small size ensures high-speed lookups and low I/O.
+    - **Active DB (SQLite/WAL)**: Stores Temporary usage history data in memory and flushed to the Active DB in batches (e.g., every n minutes). Loss of n mins of usage is acceptable for performance.
+    - **History DB (time-based)**: Stores usage logs and event history. This prevents historical data growth from slowing down core lookups.
+- **I/O Optimization**:
+    - **Buffered Writes**: Usage data is aggregated in memory and flushed to the Active DB in batches (e.g., every 5 minutes). Loss of 5 mins of usage is acceptable for performance.
+    - **Write-Ahead Logging (WAL)**: Used for concurrent read/write efficiency in SQLite.
+- **Memory Footprint**:
+    - **In-Memory Cache**: Active user status and current session IPs are kept in memory for $O(1)$ enforcement checks.
+    - **Prepared Statements**: Minimizes CPU overhead for repeated SQL operations.
 
-### 4.2 Scalability & Storage
-- **Small Scale**: Multi-threaded single instance. Uses a file-based timeseries DB (e.g. SQLite with WAL or custom file logs).
-- **Large Scale**: Highly-available multi-instance Core. External timeseries DB + Redis for real-time counters.
-- **Optimized Tables**: Suggested separation of **Today's Usage** (high access) from **Historical Archive**.
+### 4.2 Configuration
+- **Cloud-Native**: Fully configurable via **Environment Variables** (ENV).
 
-### 4.3 Communication
-- **TLS Mandatory**: All Node <-> Core communication must be encrypted via TLS.
-- **Pull/Push Hybrid**: Core can request (pull) current consumption from all services at any time.
+### 4.3 Node Communication
+- **TLS Mandatory**: Secure communication for all protocols.
+- **RADIUS (Last Priority)**: Support for Mikrotik/NAS via RADIUS protocol will be implemented as the final phase.
 
 ## 5. Security Summary
 - **Encrypted Communication**: TLS for all endpoints.
 - **Strict IP Handling**: Immediate deletion of raw IPs after metadata extraction.
+- **Fine-grained Authorization**: Access controlled per Node/Service.

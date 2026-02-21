@@ -2,22 +2,22 @@
 
 **A universal, protocol-agnostic Usage & Subscription Control Plane.**
 
-HUE is a high-performance, secure, and ultra-lightweight engine designed to manage user consumption across multiple nodes and a vast array of protocols. It is engineered for low overhead, making it ideal for everything from small personal servers to large-scale ISP-grade deployments.
+HUE is a high-performance, secure, and ultra-lightweight engine designed to manage user consumption across multiple nodes and a vast array of protocols. It is engineered for extremely low I/O and CPU overhead, making it ideal for managing 1000+ users on standard hardware.
 
 ---
 
 ## ✨ Key Features
 
-- **🌐 Massive Protocol Support**: Native integration for:
-  - **VPN/Tunneling**: Xray, Singbox, WireGuard, OpenVPN, IPSec, SSH.
-  - **Traditional**: PPP, PPTP, SSTP, L2TP.
-  - **Modern Proxies**: Vless, Trojan, Shadowsocks, VMess.
-- **⚡ Ultra-Low Overhead**: optimized for minimal CPU and RAM usage. Runs smoothly with 100+ users on low-spec hardware.
-- **📜 Event Sourcing Architecture**: Every state change (Connect, Disconnect, Usage, Reset) is an immutable event, ensuring perfect consistency and auditability.
-- **🔒 Privacy First**: Zero Raw-IP retention. Transient IPs are used for session counting and Geo-extraction, then immediately purged.
-- **🛠️ ENV-Powered Configuration**: Fully configurable via Environment Variables for modern, cloud-native deployments.
-- **📊 Optimized Storage**: Intelligent separation of active usage counters and historical analytics for maximum performance.
-- **🛡️ Fine-Grained Locking**: System-wide performance remains fluid because locking is localized to the specific modified item (user/node/service).
+- **🌐 Comprehensive Protocol Support**: 
+  - **VPN/Proxy**: Xray, Singbox, WireGuard, OpenVPN, IPSec, SSH.
+  - **Core Protocols**: Vless, Trojan, Shadowsocks, VMess.
+  - **Enterprise**: PPP, L2TP, and RADIUS (Mikrotik/NAS) support.
+- **⚡ Performance Optimized**: 
+  - **Buffered Writes**: Aggregates usage in-memory to minimize disk I/O.
+  - **Dual-DB Architecture**: Separate databases for Active Metadata and Historical Logs to maintain constant speed regardless of history size.
+- **📜 Event Sourcing Architecture**: Immutable event logs for perfect consistency and audit replay.
+- **🔒 Privacy First**: Zero Raw-IP retention. IPs are deleted immediately after session/geo processing.
+- **🛡️ Fine-Grained Locking**: High concurrency with locks isolated to specific users or nodes.
 
 ---
 
@@ -25,9 +25,9 @@ HUE is a high-performance, secure, and ultra-lightweight engine designed to mana
 
 ```mermaid
 graph TD
-    subgraph "Service Layers"
-        SN1[Xray/Singbox]
-        SN2[PPP/L2TP Gateways]
+    subgraph "Service/NAS Layers"
+        SN1[Xray/Singbox/VPN]
+        SN2["Mikrotik (RADIUS)"]
         SN3[WireGuard/VPN]
     end
     
@@ -35,25 +35,35 @@ graph TD
         direction TB
         HC[In-Memory Engine]
         EV[Event Store]
-        DB[(Metadata & Stats)]
+        DBA[(Active DB - Metadata)]
+        DBH[(History DB - Logs)]
     end
 
     SN1 <-->|TLS/gRPC| HC
-    SN2 <-->|TLS/gRPC| HC
+    SN2 <-->|RADIUS/UDP| HC
     SN3 <-->|TLS/gRPC| HC
     HC --> EV
-    HC --- DB
+    HC --- DBA
+    EV --- DBH
 ```
 
 ---
 
-## 🛠️ Performance Model
+## 🛠️ Scalability Model
 
-| Scale | Storage Mechanism | Setup Overhead |
+| Scale | Strategy | I/O Management |
 | :--- | :--- | :--- |
-| **Small (<200 Users)** | Multi-thread single instance + SQLite/File | Minimal (Low RAM) |
-| **Large (10k+ Users)** | Multi-instance + TimescaleDB  |
+| **Medium (Up to 1000+ Users)** | Multi-thread single instance + SQLite WAL | 5min Buffered Batch Flush |
+| **Large (10k+ Users)** | Multi-instance + TimescaleDB | Continuous Ingest |
 
+---
+
+## 🗺️ Roadmap
+
+- [ ] Core gRPC Ingestor & Quota Engine
+- [ ] Xray, Singbox, & WireGuard Adapters
+- [ ] Advanced Traffic Tagging
+- [ ] **RADIUS / NAS Support (Final Phase Priority)**
 
 ---
 
