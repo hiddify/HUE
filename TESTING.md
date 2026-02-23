@@ -47,6 +47,41 @@ You should see:
 
 ---
 
+## Benchmark Testing (Real Simulation)
+
+Build benchmark tool:
+
+```powershell
+go build -o bin/benchmark.exe ./cmd/benchmark
+```
+
+Run single benchmark:
+
+```powershell
+# 100 users
+.\bin\benchmark.exe -users 100 -duration 1m -interval 1s
+
+# 1000 users
+.\bin\benchmark.exe -users 1000 -duration 1m -interval 1s
+
+# 10000 users
+.\bin\benchmark.exe -users 10000 -duration 1m -interval 1s
+```
+
+Run 5 mini benchmarks (includes 100 / 1000 / 10000 user scenarios):
+
+```powershell
+.\bin\benchmark.exe -suite
+```
+
+What this benchmark does:
+- Creates users + active packages in SQLite
+- Simulates per-user sessions and usage reports concurrently
+- Runs quota checks and records accepted usage to stress core engine paths
+- Prints requests/sec, errors/rejections, and memory/goroutine peaks
+
+---
+
 ## Testing HTTP REST API
 
 All HTTP endpoints require the `secret` query parameter.

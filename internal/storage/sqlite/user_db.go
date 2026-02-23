@@ -4,10 +4,41 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/hiddify/hue-go/internal/domain"
 )
+
+func parseSQLiteTime(value string) (time.Time, error) {
+	value = strings.TrimSpace(value)
+	if idx := strings.Index(value, " m="); idx >= 0 {
+		value = strings.TrimSpace(value[:idx])
+	}
+
+	layouts := []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02 15:04:05.999999999 -0700 MST",
+		"2006-01-02 15:04:05.999999999 -0700 -0700",
+		"2006-01-02 15:04:05 -0700 MST",
+		"2006-01-02 15:04:05 -0700 -0700",
+		"2006-01-02 15:04:05.999999999-07:00",
+		"2006-01-02 15:04:05-07:00",
+		"2006-01-02 15:04:05.999999999",
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04:05.999999999",
+		"2006-01-02T15:04:05",
+	}
+
+	for _, layout := range layouts {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return parsed, nil
+		}
+	}
+
+	return time.Time{}, fmt.Errorf("unsupported sqlite datetime format: %q", value)
+}
 
 // UserDB handles user-related database operations
 type UserDB struct {
@@ -130,6 +161,7 @@ func (db *UserDB) GetUser(id string) (*domain.User, error) {
 	var caCerts, groups, devices sql.NullString
 	var activePackageID sql.NullString
 	var firstConn, lastConn sql.NullTime
+	var createdAtRaw, updatedAtRaw string
 
 	err := db.QueryRow(`
 		SELECT id, username, password, public_key, private_key, ca_cert_list, groups, allowed_devices, status, active_package_id, first_connection_at, last_connection_at, created_at, updated_at
@@ -137,7 +169,7 @@ func (db *UserDB) GetUser(id string) (*domain.User, error) {
 	`, id).Scan(
 		&user.ID, &user.Username, &user.Password, &user.PublicKey, &user.PrivateKey,
 		&caCerts, &groups, &devices, &user.Status, &activePackageID,
-		&firstConn, &lastConn, &user.CreatedAt, &user.UpdatedAt,
+		&firstConn, &lastConn, &createdAtRaw, &updatedAtRaw,
 	)
 
 	if err == sql.ErrNoRows {
@@ -167,6 +199,16 @@ func (db *UserDB) GetUser(id string) (*domain.User, error) {
 		user.LastConnectionAt = &lastConn.Time
 	}
 
+	user.CreatedAt, err = parseSQLiteTime(createdAtRaw)
+	if err != nil {
+		return nil, err
+	}
+
+	user.UpdatedAt, err = parseSQLiteTime(updatedAtRaw)
+	if err != nil {
+		return nil, err
+	}
+
 	return user, nil
 }
 
@@ -176,6 +218,7 @@ func (db *UserDB) GetUserByUsername(username string) (*domain.User, error) {
 	var caCerts, groups, devices sql.NullString
 	var activePackageID sql.NullString
 	var firstConn, lastConn sql.NullTime
+	var createdAtRaw, updatedAtRaw string
 
 	err := db.QueryRow(`
 		SELECT id, username, password, public_key, private_key, ca_cert_list, groups, allowed_devices, status, active_package_id, first_connection_at, last_connection_at, created_at, updated_at
@@ -183,7 +226,7 @@ func (db *UserDB) GetUserByUsername(username string) (*domain.User, error) {
 	`, username).Scan(
 		&user.ID, &user.Username, &user.Password, &user.PublicKey, &user.PrivateKey,
 		&caCerts, &groups, &devices, &user.Status, &activePackageID,
-		&firstConn, &lastConn, &user.CreatedAt, &user.UpdatedAt,
+		&firstConn, &lastConn, &createdAtRaw, &updatedAtRaw,
 	)
 
 	if err == sql.ErrNoRows {
@@ -210,6 +253,16 @@ func (db *UserDB) GetUserByUsername(username string) (*domain.User, error) {
 	}
 	if lastConn.Valid {
 		user.LastConnectionAt = &lastConn.Time
+	}
+
+	user.CreatedAt, err = parseSQLiteTime(createdAtRaw)
+	if err != nil {
+		return nil, err
+	}
+
+	user.UpdatedAt, err = parseSQLiteTime(updatedAtRaw)
+	if err != nil {
+		return nil, err
 	}
 
 	return user, nil
@@ -257,11 +310,12 @@ func (db *UserDB) ListUsers(filter *domain.UserFilter) ([]*domain.User, error) {
 		var caCerts, groups, devices sql.NullString
 		var activePackageID sql.NullString
 		var firstConn, lastConn sql.NullTime
+		var createdAtRaw, updatedAtRaw string
 
 		err := rows.Scan(
 			&user.ID, &user.Username, &user.Password, &user.PublicKey, &user.PrivateKey,
 			&caCerts, &groups, &devices, &user.Status, &activePackageID,
-			&firstConn, &lastConn, &user.CreatedAt, &user.UpdatedAt,
+			&firstConn, &lastConn, &createdAtRaw, &updatedAtRaw,
 		)
 		if err != nil {
 			return nil, err
@@ -284,6 +338,16 @@ func (db *UserDB) ListUsers(filter *domain.UserFilter) ([]*domain.User, error) {
 		}
 		if lastConn.Valid {
 			user.LastConnectionAt = &lastConn.Time
+		}
+
+		user.CreatedAt, err = parseSQLiteTime(createdAtRaw)
+		if err != nil {
+			return nil, err
+		}
+
+		user.UpdatedAt, err = parseSQLiteTime(updatedAtRaw)
+		if err != nil {
+			return nil, err
 		}
 
 		users = append(users, user)
@@ -353,6 +417,7 @@ func (db *UserDB) CreatePackage(pkg *domain.Package) error {
 func (db *UserDB) GetPackage(id string) (*domain.Package, error) {
 	pkg := &domain.Package{}
 	var startAt, expiresAt sql.NullTime
+	var createdAtRaw, updatedAtRaw string
 
 	err := db.QueryRow(`
 		SELECT id, user_id, total_traffic, upload_limit, download_limit, reset_mode, duration, start_at, max_concurrent, status, current_upload, current_download, current_total, expires_at, created_at, updated_at
@@ -361,7 +426,7 @@ func (db *UserDB) GetPackage(id string) (*domain.Package, error) {
 		&pkg.ID, &pkg.UserID, &pkg.TotalTraffic, &pkg.UploadLimit, &pkg.DownloadLimit,
 		&pkg.ResetMode, &pkg.Duration, &startAt, &pkg.MaxConcurrent, &pkg.Status,
 		&pkg.CurrentUpload, &pkg.CurrentDownload, &pkg.CurrentTotal, &expiresAt,
-		&pkg.CreatedAt, &pkg.UpdatedAt,
+		&createdAtRaw, &updatedAtRaw,
 	)
 
 	if err == sql.ErrNoRows {
@@ -378,6 +443,16 @@ func (db *UserDB) GetPackage(id string) (*domain.Package, error) {
 		pkg.ExpiresAt = &expiresAt.Time
 	}
 
+	pkg.CreatedAt, err = parseSQLiteTime(createdAtRaw)
+	if err != nil {
+		return nil, err
+	}
+
+	pkg.UpdatedAt, err = parseSQLiteTime(updatedAtRaw)
+	if err != nil {
+		return nil, err
+	}
+
 	return pkg, nil
 }
 
@@ -385,6 +460,7 @@ func (db *UserDB) GetPackage(id string) (*domain.Package, error) {
 func (db *UserDB) GetPackageByUserID(userID string) (*domain.Package, error) {
 	pkg := &domain.Package{}
 	var startAt, expiresAt sql.NullTime
+	var createdAtRaw, updatedAtRaw string
 
 	err := db.QueryRow(`
 		SELECT p.id, p.user_id, p.total_traffic, p.upload_limit, p.download_limit, p.reset_mode, p.duration, p.start_at, p.max_concurrent, p.status, p.current_upload, p.current_download, p.current_total, p.expires_at, p.created_at, p.updated_at
@@ -395,7 +471,7 @@ func (db *UserDB) GetPackageByUserID(userID string) (*domain.Package, error) {
 		&pkg.ID, &pkg.UserID, &pkg.TotalTraffic, &pkg.UploadLimit, &pkg.DownloadLimit,
 		&pkg.ResetMode, &pkg.Duration, &startAt, &pkg.MaxConcurrent, &pkg.Status,
 		&pkg.CurrentUpload, &pkg.CurrentDownload, &pkg.CurrentTotal, &expiresAt,
-		&pkg.CreatedAt, &pkg.UpdatedAt,
+		&createdAtRaw, &updatedAtRaw,
 	)
 
 	if err == sql.ErrNoRows {
@@ -410,6 +486,16 @@ func (db *UserDB) GetPackageByUserID(userID string) (*domain.Package, error) {
 	}
 	if expiresAt.Valid {
 		pkg.ExpiresAt = &expiresAt.Time
+	}
+
+	pkg.CreatedAt, err = parseSQLiteTime(createdAtRaw)
+	if err != nil {
+		return nil, err
+	}
+
+	pkg.UpdatedAt, err = parseSQLiteTime(updatedAtRaw)
+	if err != nil {
+		return nil, err
 	}
 
 	return pkg, nil
