@@ -241,6 +241,26 @@ func (e *QuotaEngine) CheckAndEnforceQuota(userID string) (*QuotaResult, error) 
 		return nil, err
 	}
 
+	pkg := result.Pkg
+	if pkg == nil {
+		pkg, err = e.userDB.GetPackageByUserID(userID)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if pkg != nil {
+		totalExceeded := pkg.TotalTraffic > 0 && pkg.CurrentTotal >= pkg.TotalTraffic
+		uploadExceeded := pkg.UploadLimit > 0 && pkg.CurrentUpload >= pkg.UploadLimit
+		downloadExceeded := pkg.DownloadLimit > 0 && pkg.CurrentDownload >= pkg.DownloadLimit
+
+		if totalExceeded || uploadExceeded || downloadExceeded {
+			result.CanUse = false
+			result.QuotaExceeded = true
+			result.Reason = "traffic quota exceeded"
+		}
+	}
+
 	if !result.CanUse && result.QuotaExceeded {
 		// Suspend user
 		if err := e.userDB.UpdateUserStatus(userID, domain.UserStatusSuspended); err != nil {

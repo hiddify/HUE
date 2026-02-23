@@ -17,22 +17,61 @@ import (
 	"github.com/hiddify/hue-go/internal/eventstore"
 	"github.com/hiddify/hue-go/internal/storage/cache"
 	"github.com/hiddify/hue-go/internal/storage/sqlite"
+	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
 
 func main() {
+	if err := newRootCommand().Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "Command failed: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func newRootCommand() *cobra.Command {
+	rootCmd := &cobra.Command{
+		Use:   "hue",
+		Short: "Hiddify Usage Engine",
+	}
+
+	rootCmd.AddCommand(newServeCommand())
+	rootCmd.AddCommand(newVersionCommand())
+
+	return rootCmd
+}
+
+func newServeCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "serve",
+		Short: "Start gRPC and HTTP servers",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runServe()
+		},
+	}
+}
+
+func newVersionCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print version",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Fprintln(cmd.OutOrStdout(), "hue version 1.0.0")
+		},
+	}
+}
+
+func runServe() error {
 	// Initialize logger
 	logger, err := zap.NewProduction()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to initialize logger: %w", err)
 	}
 	defer logger.Sync()
 
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
-		logger.Fatal("Failed to load config", zap.Error(err))
+		return fmt.Errorf("failed to load config: %w", err)
 	}
 
 	// Debug: print loaded secret
@@ -51,25 +90,25 @@ func main() {
 	// Initialize database layer
 	userDB, err := sqlite.NewUserDB(cfg.DatabaseURL)
 	if err != nil {
-		logger.Fatal("Failed to initialize user database", zap.Error(err))
+		return fmt.Errorf("failed to initialize user database: %w", err)
 	}
 	defer userDB.Close()
 
 	activeDB, err := sqlite.NewActiveDB(cfg.DatabaseURL)
 	if err != nil {
-		logger.Fatal("Failed to initialize active database", zap.Error(err))
+		return fmt.Errorf("failed to initialize active database: %w", err)
 	}
 	defer activeDB.Close()
 
 	historyDB, err := sqlite.NewHistoryDB(cfg.DatabaseURL)
 	if err != nil {
-		logger.Fatal("Failed to initialize history database", zap.Error(err))
+		return fmt.Errorf("failed to initialize history database: %w", err)
 	}
 	defer historyDB.Close()
 
 	// Run migrations
 	if err := userDB.Migrate(); err != nil {
-		logger.Fatal("Failed to run migrations", zap.Error(err))
+		return fmt.Errorf("failed to run migrations: %w", err)
 	}
 
 	// Initialize in-memory cache
@@ -78,7 +117,7 @@ func main() {
 	// Initialize event store
 	eventStore, err := eventstore.New(cfg.EventStoreType, historyDB)
 	if err != nil {
-		logger.Fatal("Failed to initialize event store", zap.Error(err))
+		return fmt.Errorf("failed to initialize event store: %w", err)
 	}
 
 	// Initialize core engine
@@ -126,7 +165,7 @@ func main() {
 	// Start gRPC listener
 	lis, err := net.Listen("tcp", ":"+cfg.Port)
 	if err != nil {
-		logger.Fatal("Failed to listen on gRPC port", zap.Error(err))
+		return fmt.Errorf("failed to listen on gRPC port: %w", err)
 	}
 
 	go func() {
@@ -147,7 +186,7 @@ func main() {
 
 	httpLis, err := net.Listen("tcp", ":"+cfg.HTTPPort)
 	if err != nil {
-		logger.Fatal("Failed to listen on HTTP port", zap.Error(err))
+		return fmt.Errorf("failed to listen on HTTP port: %w", err)
 	}
 
 	httpServer := &stdhttp.Server{
@@ -189,4 +228,5 @@ func main() {
 	}
 
 	logger.Info("HUE shutdown complete")
+	return nil
 }

@@ -4,6 +4,8 @@ package hue;
 
 option go_package = "github.com/hiddify/hue-go/pkg/proto";
 
+import "google/protobuf/struct.proto";
+
 // Common messages
 
 message Empty {}
@@ -15,43 +17,65 @@ message ErrorResponse {
 
 // User messages
 
-message User {
+message UserInfo {
     string id = 1;
-    string username = 2;
-    string public_key = 3;
-    repeated string ca_cert_list = 4;
-    repeated string groups = 5;
-    repeated string allowed_devices = 6;
-    string status = 7;
-    string active_package_id = 8;
-    int64 first_connection_at = 9;
-    int64 last_connection_at = 10;
-    int64 created_at = 11;
-    int64 updated_at = 12;
+    repeated string groups = 2;
+    string status = 3;
+    string active_package_id = 4;
+    int64 first_connection_at = 5;
+    int64 last_connection_at = 6;
+    int64 created_at = 7;
+    int64 updated_at = 8;
+    map<string, google.protobuf.Value> metadata = 9;
 }
 
-message CreateUserRequest {
-    string username = 1;
-    string password = 2;
-    string public_key = 3;
-    string private_key = 4;
-    repeated string ca_cert_list = 5;
-    repeated string groups = 6;
-    repeated string allowed_devices = 7;
-    string active_package_id = 8;
+message UserAuthMethod {
+    string user_id = 1;
+    string uuid = 2;
+    string username = 3;
+    string password = 4;
+    string public_key = 5;
+    string private_key = 6;
+    repeated string ca_cert_list = 7;
+    repeated string allowed_devices = 8;
 }
 
-message UpdateUserRequest {
-    string id = 1;
+message UserAuthMethodRequest {
+    string uuid = 1;
     string username = 2;
     string password = 3;
     string public_key = 4;
     string private_key = 5;
     repeated string ca_cert_list = 6;
-    repeated string groups = 7;
-    repeated string allowed_devices = 8;
-    string status = 9;
-    string active_package_id = 10;
+    repeated string allowed_devices = 7;
+}
+
+message CreateUserPackageRequest {
+    int64 total_limit = 1;
+    int64 upload_limit = 2;
+    int64 download_limit = 3;
+    string reset_mode = 4;
+    int64 duration = 5;
+    int64 start_at = 6;
+    int32 max_concurrent = 7;
+}
+
+message User {
+    UserInfo info = 1;
+    UserAuthMethod auth_method = 2;
+}
+
+message CreateUserRequest {
+    UserInfo user_info = 1;
+    UserAuthMethodRequest auth_method = 2;
+    CreateUserPackageRequest package_request = 3;
+}
+
+message UpdateUserRequest {
+    string id = 1;
+    UserInfo user_info = 2;
+    UserAuthMethodRequest auth_method = 3;
+    string active_package_id = 4;
 }
 
 message GetUserRequest {
@@ -80,7 +104,7 @@ message DeleteUserRequest {
 message Package {
     string id = 1;
     string user_id = 2;
-    int64 total_traffic = 3;
+    int64 total_limit = 3;
     int64 upload_limit = 4;
     int64 download_limit = 5;
     string reset_mode = 6;
@@ -98,7 +122,7 @@ message Package {
 
 message CreatePackageRequest {
     string user_id = 1;
-    int64 total_traffic = 2;
+    int64 total_limit = 2;
     int64 upload_limit = 3;
     int64 download_limit = 4;
     string reset_mode = 5;
@@ -122,25 +146,25 @@ message DeletePackageRequest {
 // Node messages
 
 message Node {
-    string id = 1;
+    repeated string ips = 1;
     string name = 2;
-    repeated string allowed_ips = 3;
     double traffic_multiplier = 4;
     string reset_mode = 5;
     int32 reset_day = 6;
     int64 current_upload = 7;
     int64 current_download = 8;
-    string country = 9;
-    string city = 10;
-    string isp = 11;
-    int64 created_at = 12;
-    int64 updated_at = 13;
+    int64 current_total = 9;
+    string country = 10;
+    string city = 11;
+    string isp = 12;
+    int64 created_at = 13;
+    int64 updated_at = 14;
 }
 
 message CreateNodeRequest {
     string name = 1;
     string secret_key = 2;
-    repeated string allowed_ips = 3;
+    repeated string ips = 3;
     double traffic_multiplier = 4;
     string reset_mode = 5;
     int32 reset_day = 6;
@@ -151,6 +175,7 @@ message CreateNodeRequest {
 
 message GetNodeRequest {
     string id = 1;
+    string ip = 2;
 }
 
 message ListNodesResponse {
@@ -167,22 +192,19 @@ message Service {
     string id = 1;
     string node_id = 2;
     string name = 3;
-    string protocol = 4;
-    repeated string allowed_auth_methods = 5;
-    string callback_url = 6;
-    int64 current_upload = 7;
-    int64 current_download = 8;
-    int64 created_at = 9;
-    int64 updated_at = 10;
+    repeated string allowed_auth_methods = 4;
+    string callback_url = 5;
+    repeated string ips = 6;
+    string access_token = 7;
+    int64 created_at = 8;
+    int64 updated_at = 9;
 }
 
 message CreateServiceRequest {
-    string node_id = 1;
-    string secret_key = 2;
-    string name = 3;
-    string protocol = 4;
-    repeated string allowed_auth_methods = 5;
-    string callback_url = 6;
+    string name = 1;
+    repeated string allowed_auth_methods = 2;
+    string callback_url = 3;
+    repeated string ips = 4;
 }
 
 message GetServiceRequest {
@@ -196,27 +218,27 @@ message DeleteServiceRequest {
 // Usage messages
 
 message UsageReport {
-    string id = 1;
-    string user_id = 2;
-    string node_id = 3;
-    string service_id = 4;
-    int64 upload = 5;
-    int64 download = 6;
-    string session_id = 7;
-    string client_ip = 8;
-    repeated string tags = 9;
-    int64 timestamp = 10;
+    string user_id = 1;
+    int64 upload = 2;
+    int64 download = 3;
+    repeated string client_ips = 4;
+    repeated string tags = 5;
+    int64 timestamp = 6;
+}
+
+enum UsageReportStatus {
+    USAGE_REPORT_STATUS_UNSPECIFIED = 0;
+    ACTIVE = 1;
+    QUOTA_EXCEEDED = 2;
+    SESSION_LIMIT_HIT = 3;
+    PENALTY_APPLIED = 4;
+    REJECTED = 5;
 }
 
 message UsageReportResult {
     string user_id = 1;
-    string package_id = 2;
-    bool accepted = 3;
-    bool quota_exceeded = 4;
-    bool session_limit_hit = 5;
-    bool penalty_applied = 6;
-    bool should_disconnect = 7;
-    string reason = 8;
+    UsageReportStatus status = 2;
+    string reason = 3;
 }
 
 message ReportUsageRequest {
@@ -237,18 +259,7 @@ message BatchReportUsageResponse {
 
 message DisconnectCommand {
     string user_id = 1;
-    string session_id = 2;
-    string reason = 3;
-    string node_id = 4;
-}
-
-message GetDisconnectCommandsRequest {
-    string node_id = 1;
-    int32 limit = 2;
-}
-
-message GetDisconnectCommandsResponse {
-    repeated DisconnectCommand commands = 1;
+    string reason = 2;
 }
 
 // Event messages
@@ -293,7 +304,6 @@ message HealthCheckResponse {
 service UsageService {
     rpc ReportUsage(ReportUsageRequest) returns (ReportUsageResponse);
     rpc BatchReportUsage(BatchReportUsageRequest) returns (BatchReportUsageResponse);
-    rpc GetDisconnectCommands(GetDisconnectCommandsRequest) returns (GetDisconnectCommandsResponse);
 }
 
 // AdminService handles administrative operations
@@ -326,28 +336,3 @@ service AdminService {
     rpc GetEvents(GetEventsRequest) returns (GetEventsResponse);
 }
 
-// NodeService handles node authentication and commands
-service NodeService {
-    rpc Authenticate(AuthenticateRequest) returns (AuthenticateResponse);
-    rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
-}
-
-message AuthenticateRequest {
-    string secret_key = 1;
-}
-
-message AuthenticateResponse {
-    bool success = 1;
-    string node_id = 2;
-    string error = 3;
-}
-
-message HeartbeatRequest {
-    string node_id = 1;
-    int64 current_upload = 2;
-    int64 current_download = 3;
-}
-
-message HeartbeatResponse {
-    bool acknowledged = 1;
-}
