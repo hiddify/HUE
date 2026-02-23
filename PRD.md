@@ -1,7 +1,7 @@
 # Product Requirements Document (PRD) - Hiddify Usage Engine (HUE)
 
 ## 1. Overview
-Hiddify Usage Engine (HUE) is a protocol-agnostic usage tracking and subscription control plane. It is designed to manage user consumption, enforce package limits, and provide granular reporting across multiple nodes and various protocols (**Xray/Singbox/PPP/PPTP/SSTP/L2TP/IPSec/OpenVPN/Vless/Trojan/Shadowsocks/VMess/WireGuard/RADIUS**) without being tied to a specific panel or service.
+Hiddify Usage Engine (HUE) is a protocol-agnostic usage tracking and subscription control plane. It is designed to manage user consumption, enforce package limits, and provide granular reporting across multiple services and various protocols (**Xray/Singbox/PPP/PPTP/SSTP/L2TP/IPSec/OpenVPN/Vless/Trojan/Shadowsocks/VMess/WireGuard/RADIUS**) without being tied to a specific panel or service.
 
 ## 2. Core Entities & Data Model
 
@@ -29,23 +29,20 @@ Hiddify Usage Engine (HUE) is a protocol-agnostic usage tracking and subscriptio
 - **Max Concurrent**: Number of allowed simultaneous IP-based sessions.
 - **Status**: `active`, `expired`, `finish`, `suspended`.
 
-### 2.3 Node
-Any server hosting services.
-- **UUID**: Unique identifier.
-- **Secret Key**: For authentication.
+### 2.3 Node (Logical Entity)
+In HUE, a Node is a logical grouping of services, typically identified by its IP address.
+- **IPs**: Node IP addresses.
 - **Name**: User-friendly label.
-- **Allowed IPs**: Whitelist.
 - **Traffic Multiplier**: Usage scaling factor (e.g., multiplier 2).
 - **Reset Mode**: `no-reset`, `hourly`, `daily`, `weekly`, `monthly`, `yearly`.
 - **Reset Day**: Scheduled reset point.
 - **Current Upload & Download**: Aggregate counters.
 - **Geo Information**: country, city, isp.
-- **History Storage**: Node usage history is stored in a **separate database** to keep the core DB small and fast.
+- **History Storage**: Node usage history is stored in a **separate database**.
 
 ### 2.4 Service
-Specific protocol instance on a Node.
+Specific protocol instance connecting to the Core.
 - **UUID / Secret Key**: For authentication.
-- **Node ID**: Parent node identification.
 - **Allowed Auth Methods**: [`uuid`, `password`, `pubkey`, etc.] visible to the service.
 - **Callback URL** (optional): For pushing real-time usage.
 - **History Storage**: Service usage history is stored in a **separate database**.
@@ -55,14 +52,14 @@ Specific protocol instance on a Node.
 ### 3.1 Usage Tracking
 - **Unified Reporting**: Standardized format for ALL protocols.
 - **Reporting Intervals**: Services push or Core pulls usage every $N$ seconds/minutes.
-- **Granular Tagging**: Events include `tags` (e.g., `vless`, `wireguard`) `service`, and `node` are extracted automatically in the core.
+- **Granular Tagging**: Events include `tags` (e.g., `vless`, `wireguard`). `service` and `node` properties are determined automatically by the Core based on the connection source.
 - **Geo Extraction**: Raw IPs are used for session counting and Geo-metadata (MaxMind) extraction, then discarded. **Zero Raw-IP Retention** policy: item is deleted immediately after processing without any logging.
 
 ### 3.2 Quota & Enforcement
 - **Hard Limits**: On quota breach, status becomes `suspended`. Disconnect events are **batched** for performance.
 - **Concurrent Session Enforcement**: Unique IPs active within $X$ seconds are counted.
 - **Penalty Logic**: Exceeding `max_concurrent` triggers a temporary penalty (disconnect for $N$ minutes), logged in-memory but not permanent in DB.
-- **Locking Model**: Fine-grained locking. Locks apply only to the specific service, node, or user being modified.
+- **Locking Model**: Fine-grained locking. Locks apply only to the specific service or user being modified.
 
 ### 3.3 Event Sourcing Model
 All state changes are captured as events for audit and consistency:
@@ -84,14 +81,19 @@ To achieve high speed, low memory footprint, and minimal I/O:
     - **In-Memory Cache**: Active user status and current session IPs are kept in memory for $O(1)$ enforcement checks.
     - **Prepared Statements**: Minimizes CPU overhead for repeated SQL operations.
 
-### 4.2 Configuration
+### 4.2 Communication & Auth
+- **gRPC Metadata Auth**: `access token` (JWT or any other token)‍‍ header are passed in gRPC Headers (Metadata) for every request. This reduces message overhead. based on the access token the system will identify whether the sender is a service or manager or ....
+- **Persistent Stream**: A long-lived gRPC stream (`EnforcementService`) is used by services to receive real-time commands (like Disconnect) from the Core.
+- **TLS Mandatory**: Secure communication for all protocols.
+
+### 4.3 Configuration
 - **Cloud-Native**: Fully configurable via **Environment Variables** (ENV).
 
-### 4.3 Node Communication
+### 4.4 Node Communication
 - **TLS Mandatory**: Secure communication for all protocols.
 - **RADIUS (Last Priority)**: Support for Mikrotik/NAS via RADIUS protocol will be implemented as the final phase.
 
 ## 5. Security Summary
 - **Encrypted Communication**: TLS for all endpoints.
 - **Strict IP Handling**: Immediate deletion of raw IPs after metadata extraction.
-- **Fine-grained Authorization**: Access controlled per Node/Service.
+- **Fine-grained Authorization**: Access controlled per Service.
