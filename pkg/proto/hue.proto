@@ -1,0 +1,353 @@
+syntax = "proto3";
+
+package hue;
+
+option go_package = "github.com/hiddify/hue-go/pkg/proto";
+
+// Common messages
+
+message Empty {}
+
+message ErrorResponse {
+    string code = 1;
+    string message = 2;
+}
+
+// User messages
+
+message User {
+    string id = 1;
+    string username = 2;
+    string public_key = 3;
+    repeated string ca_cert_list = 4;
+    repeated string groups = 5;
+    repeated string allowed_devices = 6;
+    string status = 7;
+    string active_package_id = 8;
+    int64 first_connection_at = 9;
+    int64 last_connection_at = 10;
+    int64 created_at = 11;
+    int64 updated_at = 12;
+}
+
+message CreateUserRequest {
+    string username = 1;
+    string password = 2;
+    string public_key = 3;
+    string private_key = 4;
+    repeated string ca_cert_list = 5;
+    repeated string groups = 6;
+    repeated string allowed_devices = 7;
+    string active_package_id = 8;
+}
+
+message UpdateUserRequest {
+    string id = 1;
+    string username = 2;
+    string password = 3;
+    string public_key = 4;
+    string private_key = 5;
+    repeated string ca_cert_list = 6;
+    repeated string groups = 7;
+    repeated string allowed_devices = 8;
+    string status = 9;
+    string active_package_id = 10;
+}
+
+message GetUserRequest {
+    string id = 1;
+}
+
+message ListUsersRequest {
+    string status = 1;
+    string group = 2;
+    string search = 3;
+    int32 limit = 4;
+    int32 offset = 5;
+}
+
+message ListUsersResponse {
+    repeated User users = 1;
+    int32 total = 2;
+}
+
+message DeleteUserRequest {
+    string id = 1;
+}
+
+// Package messages
+
+message Package {
+    string id = 1;
+    string user_id = 2;
+    int64 total_traffic = 3;
+    int64 upload_limit = 4;
+    int64 download_limit = 5;
+    string reset_mode = 6;
+    int64 duration = 7;
+    int64 start_at = 8;
+    int32 max_concurrent = 9;
+    string status = 10;
+    int64 current_upload = 11;
+    int64 current_download = 12;
+    int64 current_total = 13;
+    int64 expires_at = 14;
+    int64 created_at = 15;
+    int64 updated_at = 16;
+}
+
+message CreatePackageRequest {
+    string user_id = 1;
+    int64 total_traffic = 2;
+    int64 upload_limit = 3;
+    int64 download_limit = 4;
+    string reset_mode = 5;
+    int64 duration = 6;
+    int64 start_at = 7;
+    int32 max_concurrent = 8;
+}
+
+message GetPackageRequest {
+    string id = 1;
+}
+
+message GetPackageByUserRequest {
+    string user_id = 1;
+}
+
+message DeletePackageRequest {
+    string id = 1;
+}
+
+// Node messages
+
+message Node {
+    string id = 1;
+    string name = 2;
+    repeated string allowed_ips = 3;
+    double traffic_multiplier = 4;
+    string reset_mode = 5;
+    int32 reset_day = 6;
+    int64 current_upload = 7;
+    int64 current_download = 8;
+    string country = 9;
+    string city = 10;
+    string isp = 11;
+    int64 created_at = 12;
+    int64 updated_at = 13;
+}
+
+message CreateNodeRequest {
+    string name = 1;
+    string secret_key = 2;
+    repeated string allowed_ips = 3;
+    double traffic_multiplier = 4;
+    string reset_mode = 5;
+    int32 reset_day = 6;
+    string country = 7;
+    string city = 8;
+    string isp = 9;
+}
+
+message GetNodeRequest {
+    string id = 1;
+}
+
+message ListNodesResponse {
+    repeated Node nodes = 1;
+}
+
+message DeleteNodeRequest {
+    string id = 1;
+}
+
+// Service messages
+
+message Service {
+    string id = 1;
+    string node_id = 2;
+    string name = 3;
+    string protocol = 4;
+    repeated string allowed_auth_methods = 5;
+    string callback_url = 6;
+    int64 current_upload = 7;
+    int64 current_download = 8;
+    int64 created_at = 9;
+    int64 updated_at = 10;
+}
+
+message CreateServiceRequest {
+    string node_id = 1;
+    string secret_key = 2;
+    string name = 3;
+    string protocol = 4;
+    repeated string allowed_auth_methods = 5;
+    string callback_url = 6;
+}
+
+message GetServiceRequest {
+    string id = 1;
+}
+
+message DeleteServiceRequest {
+    string id = 1;
+}
+
+// Usage messages
+
+message UsageReport {
+    string id = 1;
+    string user_id = 2;
+    string node_id = 3;
+    string service_id = 4;
+    int64 upload = 5;
+    int64 download = 6;
+    string session_id = 7;
+    string client_ip = 8;
+    repeated string tags = 9;
+    int64 timestamp = 10;
+}
+
+message UsageReportResult {
+    string user_id = 1;
+    string package_id = 2;
+    bool accepted = 3;
+    bool quota_exceeded = 4;
+    bool session_limit_hit = 5;
+    bool penalty_applied = 6;
+    bool should_disconnect = 7;
+    string reason = 8;
+}
+
+message ReportUsageRequest {
+    UsageReport report = 1;
+}
+
+message ReportUsageResponse {
+    UsageReportResult result = 1;
+}
+
+message BatchReportUsageRequest {
+    repeated UsageReport reports = 1;
+}
+
+message BatchReportUsageResponse {
+    repeated UsageReportResult results = 1;
+}
+
+message DisconnectCommand {
+    string user_id = 1;
+    string session_id = 2;
+    string reason = 3;
+    string node_id = 4;
+}
+
+message GetDisconnectCommandsRequest {
+    string node_id = 1;
+    int32 limit = 2;
+}
+
+message GetDisconnectCommandsResponse {
+    repeated DisconnectCommand commands = 1;
+}
+
+// Event messages
+
+message Event {
+    string id = 1;
+    string type = 2;
+    string user_id = 3;
+    string package_id = 4;
+    string node_id = 5;
+    string service_id = 6;
+    repeated string tags = 7;
+    bytes metadata = 8;
+    int64 timestamp = 9;
+}
+
+message GetEventsRequest {
+    string type = 1;
+    string user_id = 2;
+    int64 start_time = 3;
+    int64 end_time = 4;
+    int32 limit = 5;
+}
+
+message GetEventsResponse {
+    repeated Event events = 1;
+}
+
+// Health check
+
+message HealthCheckRequest {
+    string service = 1;
+}
+
+message HealthCheckResponse {
+    string status = 1;
+}
+
+// Services
+
+// UsageService handles usage reporting from nodes
+service UsageService {
+    rpc ReportUsage(ReportUsageRequest) returns (ReportUsageResponse);
+    rpc BatchReportUsage(BatchReportUsageRequest) returns (BatchReportUsageResponse);
+    rpc GetDisconnectCommands(GetDisconnectCommandsRequest) returns (GetDisconnectCommandsResponse);
+}
+
+// AdminService handles administrative operations
+service AdminService {
+    // User operations
+    rpc CreateUser(CreateUserRequest) returns (User);
+    rpc GetUser(GetUserRequest) returns (User);
+    rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+    rpc UpdateUser(UpdateUserRequest) returns (User);
+    rpc DeleteUser(DeleteUserRequest) returns (Empty);
+    
+    // Package operations
+    rpc CreatePackage(CreatePackageRequest) returns (Package);
+    rpc GetPackage(GetPackageRequest) returns (Package);
+    rpc GetPackageByUser(GetPackageByUserRequest) returns (Package);
+    rpc DeletePackage(DeletePackageRequest) returns (Empty);
+    
+    // Node operations
+    rpc CreateNode(CreateNodeRequest) returns (Node);
+    rpc GetNode(GetNodeRequest) returns (Node);
+    rpc ListNodes(Empty) returns (ListNodesResponse);
+    rpc DeleteNode(DeleteNodeRequest) returns (Empty);
+    
+    // Service operations
+    rpc CreateService(CreateServiceRequest) returns (Service);
+    rpc GetService(GetServiceRequest) returns (Service);
+    rpc DeleteService(DeleteServiceRequest) returns (Empty);
+    
+    // Event operations
+    rpc GetEvents(GetEventsRequest) returns (GetEventsResponse);
+}
+
+// NodeService handles node authentication and commands
+service NodeService {
+    rpc Authenticate(AuthenticateRequest) returns (AuthenticateResponse);
+    rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+}
+
+message AuthenticateRequest {
+    string secret_key = 1;
+}
+
+message AuthenticateResponse {
+    bool success = 1;
+    string node_id = 2;
+    string error = 3;
+}
+
+message HeartbeatRequest {
+    string node_id = 1;
+    int64 current_upload = 2;
+    int64 current_download = 3;
+}
+
+message HeartbeatResponse {
+    bool acknowledged = 1;
+}
