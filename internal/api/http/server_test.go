@@ -92,6 +92,22 @@ func TestHTTPHealthAndAuth(t *testing.T) {
 	}
 }
 
+func TestHTTPOwnerDBAuthKey(t *testing.T) {
+	fx := newHTTPFixture(t)
+
+	if err := fx.userDB.UpsertOwnerAuthKey("db-owner-key"); err != nil {
+		t.Fatalf("upsert owner auth key: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/users?secret=db-owner-key", nil)
+	rr := httptest.NewRecorder()
+	fx.router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 with db-backed owner auth key, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestHTTPUserPackageNodeServiceFlow(t *testing.T) {
 	fx := newHTTPFixture(t)
 

@@ -15,12 +15,39 @@ message ErrorResponse {
     string message = 2;
 }
 
+enum UserStatus {
+    USER_STATUS_UNSPECIFIED = 0;
+    USER_STATUS_ACTIVE = 1;
+    USER_STATUS_SUSPENDED = 2;
+    USER_STATUS_EXPIRED = 3;
+    USER_STATUS_FINISH = 4;
+    USER_STATUS_INACTIVE = 5;
+}
+
+enum ResetMode {
+    RESET_MODE_UNSPECIFIED = 0;
+    NO_RESET = 1;
+    HOURLY = 2;
+    DAILY = 3;
+    WEEKLY = 4;
+    MONTHLY = 5;
+    YEARLY = 6;
+}
+
+enum PackageStatus {
+    PACKAGE_STATUS_UNSPECIFIED = 0;
+    PACKAGE_STATUS_ACTIVE = 1;
+    PACKAGE_STATUS_EXPIRED = 2;
+    PACKAGE_STATUS_FINISH = 3;
+    PACKAGE_STATUS_SUSPENDED = 4;
+}
+
 // User messages
 
 message UserInfo {
     string id = 1;
     repeated string groups = 2;
-    string status = 3;
+    UserStatus status = 3;
     string active_package_id = 4;
     int64 first_connection_at = 5;
     int64 last_connection_at = 6;
@@ -38,6 +65,7 @@ message UserAuthMethod {
     string private_key = 6;
     repeated string ca_cert_list = 7;
     repeated string allowed_devices = 8;
+    map<string, google.protobuf.Value> custom = 9;
 }
 
 message UserAuthMethodRequest {
@@ -48,13 +76,14 @@ message UserAuthMethodRequest {
     string private_key = 5;
     repeated string ca_cert_list = 6;
     repeated string allowed_devices = 7;
+    map<string, google.protobuf.Value> custom = 8;
 }
 
 message CreateUserPackageRequest {
     int64 total_limit = 1;
     int64 upload_limit = 2;
     int64 download_limit = 3;
-    string reset_mode = 4;
+    ResetMode reset_mode = 4;
     int64 duration = 5;
     int64 start_at = 6;
     int32 max_concurrent = 7;
@@ -83,7 +112,7 @@ message GetUserRequest {
 }
 
 message ListUsersRequest {
-    string status = 1;
+    UserStatus status = 1;
     string group = 2;
     string search = 3;
     int32 limit = 4;
@@ -107,11 +136,11 @@ message Package {
     int64 total_limit = 3;
     int64 upload_limit = 4;
     int64 download_limit = 5;
-    string reset_mode = 6;
+    ResetMode reset_mode = 6;
     int64 duration = 7;
     int64 start_at = 8;
     int32 max_concurrent = 9;
-    string status = 10;
+    PackageStatus status = 10;
     int64 current_upload = 11;
     int64 current_download = 12;
     int64 current_total = 13;
@@ -125,7 +154,7 @@ message CreatePackageRequest {
     int64 total_limit = 2;
     int64 upload_limit = 3;
     int64 download_limit = 4;
-    string reset_mode = 5;
+    ResetMode reset_mode = 5;
     int64 duration = 6;
     int64 start_at = 7;
     int32 max_concurrent = 8;
@@ -149,7 +178,7 @@ message Node {
     repeated string ips = 1;
     string name = 2;
     double traffic_multiplier = 4;
-    string reset_mode = 5;
+    ResetMode reset_mode = 5;
     int32 reset_day = 6;
     int64 current_upload = 7;
     int64 current_download = 8;
@@ -166,7 +195,7 @@ message CreateNodeRequest {
     string secret_key = 2;
     repeated string ips = 3;
     double traffic_multiplier = 4;
-    string reset_mode = 5;
+    ResetMode reset_mode = 5;
     int32 reset_day = 6;
     string country = 7;
     string city = 8;
@@ -194,17 +223,15 @@ message Service {
     string name = 3;
     repeated string allowed_auth_methods = 4;
     string callback_url = 5;
-    repeated string ips = 6;
-    string access_token = 7;
-    int64 created_at = 8;
-    int64 updated_at = 9;
+    string access_token = 6;
+    int64 created_at = 7;
+    int64 updated_at = 8;
 }
 
 message CreateServiceRequest {
     string name = 1;
     repeated string allowed_auth_methods = 2;
     string callback_url = 3;
-    repeated string ips = 4;
 }
 
 message GetServiceRequest {
@@ -304,6 +331,7 @@ message HealthCheckResponse {
 service UsageService {
     rpc ReportUsage(ReportUsageRequest) returns (ReportUsageResponse);
     rpc BatchReportUsage(BatchReportUsageRequest) returns (BatchReportUsageResponse);
+    rpc ReportUsageStream(stream ReportUsageRequest) returns (stream ReportUsageResponse);
 }
 
 // AdminService handles administrative operations

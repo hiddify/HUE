@@ -111,6 +111,12 @@ func runServe() error {
 		return fmt.Errorf("failed to run migrations: %w", err)
 	}
 
+	if cfg.AuthSecret != "" {
+		if err := userDB.UpsertOwnerAuthKey(cfg.AuthSecret); err != nil {
+			return fmt.Errorf("failed to initialize owner auth key: %w", err)
+		}
+	}
+
 	// Initialize in-memory cache
 	memCache := cache.NewMemoryCache()
 

@@ -16,6 +16,7 @@ type QuotaEngine struct {
 	activeDB *sqlite.ActiveDB
 	cache    *cache.MemoryCache
 	logger   *zap.Logger
+	managerEnforcementMode domain.EnforcementMode
 
 	// Fine-grained locks per user
 	userLocks sync.Map // map[string]*sync.RWMutex
@@ -28,6 +29,16 @@ func NewQuotaEngine(userDB *sqlite.UserDB, activeDB *sqlite.ActiveDB, cache *cac
 		activeDB: activeDB,
 		cache:    cache,
 		logger:   logger,
+		managerEnforcementMode: domain.EnforcementModeDefault,
+	}
+}
+
+func (e *QuotaEngine) SetManagerEnforcementMode(mode domain.EnforcementMode) {
+	switch mode {
+	case domain.EnforcementModeSoft, domain.EnforcementModeDefault, domain.EnforcementModeHard:
+		e.managerEnforcementMode = mode
+	default:
+		e.managerEnforcementMode = domain.EnforcementModeDefault
 	}
 }
 
@@ -128,6 +139,20 @@ func (e *QuotaEngine) CheckQuota(userID string, upload, download int64) (*QuotaR
 		}
 
 		result.CanUse = true
+
+		mgrRes, err := e.checkManagerLimitsByUserID(userID, upload, download, 0, 0, 0)
+		if err != nil {
+			return nil, err
+		}
+		if mgrRes != nil && !mgrRes.Allowed {
+			result.QuotaExceeded = true
+			result.Reason = mgrRes.Reason
+			if e.managerEnforcementMode == domain.EnforcementModeSoft {
+				result.CanUse = true
+			} else {
+				result.CanUse = false
+			}
+		}
 		return result, nil
 	}
 
@@ -179,6 +204,17 @@ func (e *QuotaEngine) CheckQuota(userID string, upload, download int64) (*QuotaR
 	}
 
 	result.CanUse = true
+	mgrRes, err := e.checkManagerLimitsByUser(user, upload, download, 0, 0, 0)
+	if err != nil {
+		return nil, err
+	}
+	if mgrRes != nil && !mgrRes.Allowed {
+		result.QuotaExceeded = true
+		result.Reason = mgrRes.Reason
+		if e.managerEnforcementMode != domain.EnforcementModeSoft {
+			result.CanUse = false
+		}
+	}
 	return result, nil
 }
 
@@ -200,6 +236,16 @@ func (e *QuotaEngine) RecordUsage(userID string, upload, download int64) error {
 	// Update package usage in database
 	if err := e.userDB.UpdatePackageUsage(pkg.ID, upload, download); err != nil {
 		return err
+	}
+
+	user, err := e.userDB.GetUser(userID)
+	if err != nil {
+		return err
+	}
+	if user != nil && user.ManagerID != nil {
+		if err := e.userDB.ApplyManagerUsageDelta(*user.ManagerID, upload, download, 0, 0, 0); err != nil {
+			return err
+		}
 	}
 
 	// Update cache
@@ -232,6 +278,51 @@ func (e *QuotaEngine) RecordUsage(userID string, upload, download int64) error {
 	)
 
 	return nil
+}
+
+func (e *QuotaEngine) CheckManagerSessionLimits(userID string, sessionDelta, onlineUsersDelta, activeUsersDelta int64) (*sqlite.ManagerLimitCheckResult, error) {
+	return e.checkManagerLimitsByUserID(userID, 0, 0, sessionDelta, onlineUsersDelta, activeUsersDelta)
+}
+
+func (e *QuotaEngine) RecordManagerSessionDelta(userID string, sessionDelta, onlineUsersDelta, activeUsersDelta int64) error {
+	if sessionDelta == 0 && onlineUsersDelta == 0 && activeUsersDelta == 0 {
+		return nil
+	}
+	user, err := e.userDB.GetUser(userID)
+	if err != nil {
+		return err
+	}
+	if user == nil || user.ManagerID == nil {
+		return nil
+	}
+	return e.userDB.ApplyManagerUsageDelta(*user.ManagerID, 0, 0, sessionDelta, onlineUsersDelta, activeUsersDelta)
+}
+
+func (e *QuotaEngine) checkManagerLimitsByUserID(userID string, upload, download, sessionDelta, onlineUsersDelta, activeUsersDelta int64) (*sqlite.ManagerLimitCheckResult, error) {
+	user, err := e.userDB.GetUser(userID)
+	if err != nil {
+		return nil, err
+	}
+	return e.checkManagerLimitsByUser(user, upload, download, sessionDelta, onlineUsersDelta, activeUsersDelta)
+}
+
+func (e *QuotaEngine) checkManagerLimitsByUser(user *domain.User, upload, download, sessionDelta, onlineUsersDelta, activeUsersDelta int64) (*sqlite.ManagerLimitCheckResult, error) {
+	if user == nil || user.ManagerID == nil || *user.ManagerID == "" {
+		return &sqlite.ManagerLimitCheckResult{Allowed: true}, nil
+	}
+
+	res, err := e.userDB.CheckManagerLimits(*user.ManagerID, upload, download, sessionDelta, onlineUsersDelta, activeUsersDelta)
+	if err != nil {
+		return nil, err
+	}
+	if !res.Allowed {
+		e.logger.Warn("manager limit reached",
+			zap.String("manager_id", res.ManagerID),
+			zap.String("reason", res.Reason),
+			zap.String("mode", string(e.managerEnforcementMode)),
+		)
+	}
+	return res, nil
 }
 
 // CheckAndEnforceQuota checks quota and enforces limits

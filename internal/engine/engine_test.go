@@ -384,3 +384,96 @@ func TestQuotaEngine_CheckAndEnforceQuota_QueuesDisconnectOnExceeded(t *testing.
 		t.Fatalf("unexpected disconnect command: user=%s reason=%s", batch[0].UserID, batch[0].Reason)
 	}
 }
+
+func TestProcessUsageReport_ManagerUsageLimitEnforced(t *testing.T) {
+	fx := newTestEngineFixture(t, 2, 10_000)
+
+	manager := &domain.Manager{
+		ID:   "mgr-1",
+		Name: "manager",
+		Package: &domain.ManagerPackage{
+			TotalLimit: 50,
+			Status:     domain.ManagerPackageStatusActive,
+		},
+	}
+	if err := fx.userDB.CreateManager(manager); err != nil {
+		t.Fatalf("create manager: %v", err)
+	}
+	if _, err := fx.userDB.Exec(`UPDATE users SET manager_id = ? WHERE id = ?`, manager.ID, fx.userID); err != nil {
+		t.Fatalf("assign manager to user: %v", err)
+	}
+
+	result := fx.engine.ProcessUsageReport(&domain.UsageReport{
+		UserID:    fx.userID,
+		NodeID:    fx.nodeID,
+		ServiceID: fx.serviceID,
+		SessionID: "s1",
+		ClientIP:  "11.11.11.11",
+		Upload:    40,
+		Download:  20,
+		Timestamp: time.Now(),
+	})
+
+	if result.Accepted {
+		t.Fatalf("expected manager usage limit to reject report")
+	}
+	if result.Reason == "" {
+		t.Fatalf("expected manager limit rejection reason")
+	}
+}
+
+func TestProcessUsageReport_PropagatesManagerSessionCounters(t *testing.T) {
+	fx := newTestEngineFixture(t, 3, 10_000)
+
+	manager := &domain.Manager{
+		ID:   "mgr-sessions",
+		Name: "session-manager",
+		Package: &domain.ManagerPackage{
+			TotalLimit:     1000,
+			MaxSessions:    10,
+			MaxOnlineUsers: 10,
+			MaxActiveUsers: 10,
+			Status:         domain.ManagerPackageStatusActive,
+		},
+	}
+	if err := fx.userDB.CreateManager(manager); err != nil {
+		t.Fatalf("create manager: %v", err)
+	}
+	if _, err := fx.userDB.Exec(`UPDATE users SET manager_id = ? WHERE id = ?`, manager.ID, fx.userID); err != nil {
+		t.Fatalf("assign manager to user: %v", err)
+	}
+
+	first := fx.engine.ProcessUsageReport(&domain.UsageReport{
+		UserID:    fx.userID,
+		NodeID:    fx.nodeID,
+		ServiceID: fx.serviceID,
+		SessionID: "sess-a",
+		ClientIP:  "12.12.12.12",
+		Upload:    10,
+		Download:  10,
+		Timestamp: time.Now(),
+	})
+	if !first.Accepted {
+		t.Fatalf("expected first report accepted: %s", first.Reason)
+	}
+
+	pkg, err := fx.userDB.GetManagerPackage(manager.ID)
+	if err != nil {
+		t.Fatalf("get manager package: %v", err)
+	}
+	if pkg.CurrentSessions != 1 || pkg.CurrentOnline != 1 || pkg.CurrentActive != 1 {
+		t.Fatalf("expected manager counters after connect to be 1/1/1, got %d/%d/%d", pkg.CurrentSessions, pkg.CurrentOnline, pkg.CurrentActive)
+	}
+
+	if err := fx.quota.RecordManagerSessionDelta(fx.userID, -1, -1, -1); err != nil {
+		t.Fatalf("record manager session delta: %v", err)
+	}
+
+	pkgAfter, err := fx.userDB.GetManagerPackage(manager.ID)
+	if err != nil {
+		t.Fatalf("get manager package after disconnect: %v", err)
+	}
+	if pkgAfter.CurrentSessions != 0 || pkgAfter.CurrentOnline != 0 || pkgAfter.CurrentActive != 0 {
+		t.Fatalf("expected manager counters after disconnect to be 0/0/0, got %d/%d/%d", pkgAfter.CurrentSessions, pkgAfter.CurrentOnline, pkgAfter.CurrentActive)
+	}
+}

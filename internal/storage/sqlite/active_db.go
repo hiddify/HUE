@@ -159,10 +159,11 @@ func (db *ActiveDB) GetUnprocessedReports(limit int) ([]*domain.UsageReport, err
 		report := &domain.UsageReport{}
 		var tags sql.NullString
 		var sessionID sql.NullString
+		var timestampRaw string
 
 		err := rows.Scan(
 			&report.ID, &report.UserID, &report.NodeID, &report.ServiceID,
-			&report.Upload, &report.Download, &sessionID, &tags, &report.Timestamp,
+			&report.Upload, &report.Download, &sessionID, &tags, &timestampRaw,
 		)
 		if err != nil {
 			return nil, err
@@ -173,6 +174,10 @@ func (db *ActiveDB) GetUnprocessedReports(limit int) ([]*domain.UsageReport, err
 		}
 		if tags.Valid {
 			json.Unmarshal([]byte(tags.String), &report.Tags)
+		}
+		report.Timestamp, err = parseSQLiteTime(timestampRaw)
+		if err != nil {
+			return nil, err
 		}
 
 		reports = append(reports, report)

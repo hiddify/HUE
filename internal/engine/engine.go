@@ -18,9 +18,14 @@ type Engine struct {
 	penalty  *PenaltyHandler
 	geo      *GeoHandler
 	events   eventstore.EventStore
+	receiverHub *eventstore.ReceiverHub
 	cache    *cache.MemoryCache
 	userDB   *sqlite.UserDB
 	logger   *zap.Logger
+}
+
+func (e *Engine) SetReceiverHub(hub *eventstore.ReceiverHub) {
+	e.receiverHub = hub
 }
 
 // NewEngine creates a new Engine instance
@@ -88,6 +93,30 @@ func (e *Engine) ProcessUsageReport(report *domain.UsageReport) *domain.UsageRep
 		return result
 	}
 
+	managerSessionDelta := int64(0)
+	managerOnlineDelta := int64(0)
+	managerActiveDelta := int64(0)
+	if sessionResult.IsNewSession {
+		managerSessionDelta = 1
+		if sessionResult.CurrentCount == 0 {
+			managerOnlineDelta = 1
+			managerActiveDelta = 1
+		}
+
+		mgrRes, err := e.quota.CheckManagerSessionLimits(report.UserID, managerSessionDelta, managerOnlineDelta, managerActiveDelta)
+		if err != nil {
+			result.Reason = "manager limit check failed"
+			e.logger.Error("manager session limit check failed", zap.String("user_id", report.UserID), zap.Error(err))
+			return result
+		}
+		if mgrRes != nil && !mgrRes.Allowed {
+			result.ShouldDisconnect = true
+			result.Reason = mgrRes.Reason
+			e.emitEvent(domain.EventManagerLimitReached, &report.UserID, &pkg.ID, &report.NodeID, &report.ServiceID, []string{"manager_limit"})
+			return result
+		}
+	}
+
 	// 4. Check quota
 	quotaResult, err := e.quota.CheckQuota(report.UserID, report.Upload, report.Download)
 	if err != nil {
@@ -118,6 +147,9 @@ func (e *Engine) ProcessUsageReport(report *domain.UsageReport) *domain.UsageRep
 	// 6. Add/update session
 	if sessionResult.IsNewSession {
 		e.session.AddSession(report.UserID, report.SessionID, report.ClientIP, geoData)
+		if err := e.quota.RecordManagerSessionDelta(report.UserID, managerSessionDelta, managerOnlineDelta, managerActiveDelta); err != nil {
+			e.logger.Warn("failed to record manager session delta", zap.String("user_id", report.UserID), zap.Error(err))
+		}
 		e.emitEvent(domain.EventUserConnected, &report.UserID, &pkg.ID, &report.NodeID, &report.ServiceID, report.Tags)
 	} else {
 		e.session.AddSession(report.UserID, report.SessionID, report.ClientIP, geoData)
@@ -156,7 +188,25 @@ func (e *Engine) ProcessUsageReport(report *domain.UsageReport) *domain.UsageRep
 
 // HandleUserDisconnect handles a user disconnection
 func (e *Engine) HandleUserDisconnect(userID, sessionID string) {
+	before := e.session.GetActiveSessionCount(userID)
 	e.session.RemoveSession(userID, sessionID)
+	after := e.session.GetActiveSessionCount(userID)
+
+	sessionDelta := int64(-1)
+	onlineDelta := int64(0)
+	activeDelta := int64(0)
+	if before <= 1 || after == 0 {
+		onlineDelta = -1
+		activeDelta = -1
+	}
+	user, err := e.userDB.GetUser(userID)
+	if err != nil {
+		e.logger.Warn("failed to load user for manager disconnect delta", zap.String("user_id", userID), zap.Error(err))
+	} else if user != nil && user.ManagerID != nil {
+		if err := e.userDB.ApplyManagerUsageDelta(*user.ManagerID, 0, 0, sessionDelta, onlineDelta, activeDelta); err != nil {
+			e.logger.Warn("failed to record manager disconnect delta", zap.String("user_id", userID), zap.Error(err))
+		}
+	}
 
 	// Emit disconnect event
 	e.emitEvent(domain.EventUserDisconnected, &userID, nil, nil, nil, nil)
@@ -205,5 +255,9 @@ func (e *Engine) emitEvent(eventType domain.EventType, userID, packageID, nodeID
 			zap.String("type", string(eventType)),
 			zap.Error(err),
 		)
+	}
+
+	if e.receiverHub != nil {
+		e.receiverHub.Publish(event)
 	}
 }

@@ -137,10 +137,11 @@ func (db *HistoryDB) GetEvents(eventType *domain.EventType, userID *string, star
 		var userID, packageID, nodeID, serviceID sql.NullString
 		var tags sql.NullString
 		var metadata []byte
+		var timestampRaw string
 
 		err := rows.Scan(
 			&event.ID, &event.Type, &userID, &packageID, &nodeID, &serviceID,
-			&tags, &metadata, &event.Timestamp,
+			&tags, &metadata, &timestampRaw,
 		)
 		if err != nil {
 			return nil, err
@@ -163,6 +164,10 @@ func (db *HistoryDB) GetEvents(eventType *domain.EventType, userID *string, star
 		}
 		if metadata != nil {
 			event.Metadata = metadata
+		}
+		event.Timestamp, err = parseSQLiteTime(timestampRaw)
+		if err != nil {
+			return nil, err
 		}
 
 		events = append(events, event)
@@ -218,11 +223,12 @@ func (db *HistoryDB) GetUsageHistory(userID string, start, end time.Time, limit 
 		var packageID, nodeID, serviceID, sessionID sql.NullString
 		var country, city, isp sql.NullString
 		var tags sql.NullString
+		var timestampRaw string
 
 		err := rows.Scan(
 			&entry.ID, &entry.UserID, &packageID, &nodeID, &serviceID,
 			&entry.Upload, &entry.Download, &sessionID,
-			&country, &city, &isp, &tags, &entry.Timestamp,
+			&country, &city, &isp, &tags, &timestampRaw,
 		)
 		if err != nil {
 			return nil, err
@@ -251,6 +257,10 @@ func (db *HistoryDB) GetUsageHistory(userID string, start, end time.Time, limit 
 		}
 		if tags.Valid {
 			json.Unmarshal([]byte(tags.String), &entry.Tags)
+		}
+		entry.Timestamp, err = parseSQLiteTime(timestampRaw)
+		if err != nil {
+			return nil, err
 		}
 
 		entries = append(entries, entry)

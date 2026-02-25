@@ -18,6 +18,7 @@ const (
 // User represents a user entity in the system
 type User struct {
 	ID             string     `json:"id" db:"id"`
+	ManagerID      *string    `json:"manager_id,omitempty" db:"manager_id"`
 	Username       string     `json:"username" db:"username"`
 	Password       string     `json:"-" db:"password"` // Omit from JSON responses
 	PublicKey      string     `json:"public_key,omitempty" db:"public_key"`
@@ -36,6 +37,7 @@ type User struct {
 // UserCreate represents the input for creating a new user
 type UserCreate struct {
 	Username       string   `json:"username" validate:"required"`
+	ManagerID      *string  `json:"manager_id,omitempty"`
 	Password       string   `json:"password" validate:"required"`
 	PublicKey      string   `json:"public_key,omitempty"`
 	PrivateKey     string   `json:"private_key,omitempty"`
@@ -48,6 +50,7 @@ type UserCreate struct {
 // UserUpdate represents the input for updating a user
 type UserUpdate struct {
 	Username       *string   `json:"username,omitempty"`
+	ManagerID      *string   `json:"manager_id,omitempty"`
 	Password       *string   `json:"password,omitempty"`
 	PublicKey      *string   `json:"public_key,omitempty"`
 	PrivateKey     *string   `json:"private_key,omitempty"`

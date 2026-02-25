@@ -111,7 +111,24 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
 			secret = c.GetHeader("X-Auth-Secret")
 		}
 
-		if secret == "" || secret != s.secret {
+		if secret == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			c.Abort()
+			return
+		}
+
+		if secret == s.secret {
+			c.Next()
+			return
+		}
+
+		ok, err := s.userDB.ValidateOwnerAuthKey(secret)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "auth validation failed"})
+			c.Abort()
+			return
+		}
+		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			c.Abort()
 			return
@@ -174,6 +191,7 @@ func (s *Server) createUser(c *gin.Context) {
 
 	user := &domain.User{
 		ID:             uuid.New().String(),
+		ManagerID:      req.ManagerID,
 		Username:       req.Username,
 		Password:       req.Password,
 		PublicKey:      req.PublicKey,
@@ -231,6 +249,9 @@ func (s *Server) updateUser(c *gin.Context) {
 	// Update fields
 	if req.Username != nil {
 		user.Username = *req.Username
+	}
+	if req.ManagerID != nil {
+		user.ManagerID = req.ManagerID
 	}
 	if req.Password != nil {
 		user.Password = *req.Password

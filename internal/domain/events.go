@@ -18,6 +18,12 @@ const (
 	EventUserActivated    EventType = "USER_ACTIVATED"
 	EventPenaltyApplied   EventType = "PENALTY_APPLIED"
 	EventPenaltyExpired   EventType = "PENALTY_EXPIRED"
+	EventManagerExpired       EventType = "MANAGER_EXPIRED"
+	EventUserUsageFinished    EventType = "USER_USAGE_FINISHED"
+	EventUserPackageStarted   EventType = "USER_PACKAGE_STARTED"
+	EventManagerPackageStarted EventType = "MANAGER_PACKAGE_STARTED"
+	EventManagerLimitReached  EventType = "MANAGER_LIMIT_REACHED"
+	EventUserLimitReached     EventType = "USER_LIMIT_REACHED"
 )
 
 // Event represents an immutable event in the system

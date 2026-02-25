@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"net"
 	"strings"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -15,6 +16,31 @@ import (
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 )
+
+type Scope uint32
+
+const (
+	ScopeFull Scope = 1 << iota
+	ScopeServiceUpdate
+	ScopeReadOnly
+)
+
+type ServiceAPIKey struct {
+	ServiceID  string
+	HashedKey  string
+	CreatedAt  time.Time
+	ExpiresAt  *time.Time
+	LastUsedAt *time.Time
+	Revoked    bool
+}
+
+type OwnerAPIKey struct {
+	HashedKey  string
+	CreatedAt  time.Time
+	ExpiresAt  *time.Time
+	LastUsedAt *time.Time
+	Revoked    bool
+}
 
 // Authenticator handles authentication for gRPC and HTTP
 type Authenticator struct {
