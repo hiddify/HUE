@@ -15,6 +15,7 @@ Hiddify Usage Engine (HUE) is a protocol-agnostic usage tracking and subscriptio
 - **Allowed Device IDs**: List of identifiers. If empty, no restriction.
 - **Status**: `active`, `suspended`, `expired`, `finish`, `inactive` (manual).
 - **Active Package ID**: Current subscription link.
+- **Manager ID**: ID of the manager this user belongs to.
 - **First Connection At**: Timestamp.
 - **Last Connection**: Timestamp (updated every usage report).
 
@@ -46,6 +47,28 @@ Specific protocol instance connecting to the Core.
 - **Allowed Auth Methods**: [`uuid`, `password`, `pubkey`, etc.] visible to the service.
 - **Callback URL** (optional): For pushing real-time usage.
 - **History Storage**: Service usage history is stored in a **separate database**.
+
+### 2.5 Manager
+- **ID**: Unique identifier.
+- **Name**: User-friendly label.
+- **Parent ID**: Optional reference to a parent manager, enabling multi-level structures (e.g., Reseller → Sub-reseller). Each manager belongs to at most one parent.
+- **Package**: Policy defining limits and current usage for the manager.
+- **Metadata**: Flexible key-value storage.
+- **Created At**: Timestamp.
+- **Updated At**: Timestamp.
+
+### 2.6 Manager Package
+- **Total Limit (Bytes)**: Combined traffic limit for the manager and all descendants.
+- **Upload/Download Limits (Bytes)**: Optional separate limits.
+- **Reset Mode**: `no_reset`, `hourly`, `daily`, `weekly`, `monthly`, `yearly`.
+- **Duration (Seconds)**: Validity period.
+- **Start At**: Activation timestamp.
+- **Max Concurrent Sessions**: Global limit on simultaneous IP-based sessions.
+- **Max Online Users**: Limit on users currently connected.
+- **Max Active Users**: Limit on users who have connected within the current period.
+- **Status**: `active` or `inactive`.
+- **Current Usage (Upload, Download, Total)**: Aggregated usage across all users and sub-managers.
+- **Current Online/Active Users & Sessions**: Real-time aggregated counters.
 
 ## 3. Functional Requirements
 
@@ -97,3 +120,36 @@ To achieve high speed, low memory footprint, and minimal I/O:
 - **Encrypted Communication**: TLS for all endpoints.
 - **Strict IP Handling**: Immediate deletion of raw IPs after metadata extraction.
 - **Fine-grained Authorization**: Access controlled per Service.
+
+## 6. Manager-User Hierarchy & Enforcement
+
+### 6.1 Hierarchical Limitation Policy
+Managers form a tree structure. Limits are enforced such that:
+- A child manager's limits must never violate its parent's limits.
+- Parent restrictions are enforced across all descendants.
+- All usage aggregates upward through the hierarchy.
+
+**Example**: If a Parent Manager has `max_online_users = 100`, and two child managers each have a limit of 60, the system must ensure the total online users across both children does not exceed 100.
+
+### 6.2 Enforcement Rules
+
+#### 6.2.1 Usage Propagation
+When user usage changes:
+1. Update User usage.
+2. Update Direct Manager usage.
+3. Update all ancestor managers up to the root.
+4. Ensure aggregated values remain consistent across the tree.
+
+#### 6.2.2 Limit Handling Policy
+behavior when any limit is reached at any level:
+- **Phase 1: Soft Enforcement**: Notify via log, webhook, or alert. No immediate disruption.
+- **Phase 2: Hard Enforcement (Penalty)**: Disconnect all children for a penalty period.
+- **Phase 3: Default Enforcement**:
+  - If user limit is reached: Disconnect/block offline users until online count reduces.
+  - If usage limit is reached: Disconnect all users.
+
+## 7. Event Receivers
+Managers can listen to specific gRPC stream events (e.g., `ManagerExpired`, `UserExpire`, `UserUsageFinished`, `UserPackageStarted`, `ManagerPackageStarted`).
+- **Non-blocking**: Receivers run in separate goroutines.
+- **Configurable Buffering**: Buffers have a limited size; events are discarded if the buffer is full to prevent blocking.
+- **Multi-receiver Support**: A single event can have multiple receivers.
