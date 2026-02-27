@@ -13,6 +13,7 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -302,6 +303,7 @@ func (s *Server) CreatePackage(ctx context.Context, req *pb.CreatePackageRequest
 	pkg := &domain.Package{
 		ID:            uuid.New().String(),
 		UserID:        req.UserId,
+		TotalLimit:    req.TotalTraffic,
 		TotalTraffic:  req.TotalTraffic,
 		UploadLimit:   req.UploadLimit,
 		DownloadLimit: req.DownloadLimit,
@@ -359,6 +361,7 @@ func (s *Server) CreateNode(ctx context.Context, req *pb.CreateNodeRequest) (*pb
 		ID:                uuid.New().String(),
 		SecretKey:         req.SecretKey,
 		Name:              req.Name,
+		IPs:               req.AllowedIps,
 		AllowedIPs:        req.AllowedIps,
 		TrafficMultiplier: req.TrafficMultiplier,
 		ResetMode:         domain.ResetMode(req.ResetMode),
@@ -419,6 +422,7 @@ func (s *Server) CreateService(ctx context.Context, req *pb.CreateServiceRequest
 	service := &domain.Service{
 		ID:                 uuid.New().String(),
 		SecretKey:          req.SecretKey,
+		AccessToken:        req.SecretKey,
 		NodeID:             req.NodeId,
 		Name:               req.Name,
 		Protocol:           req.Protocol,
@@ -602,7 +606,7 @@ func (s *Server) domainToProtoNode(n *domain.Node) *pb.Node {
 	return &pb.Node{
 		Id:                n.ID,
 		Name:              n.Name,
-		AllowedIps:        n.AllowedIPs,
+		AllowedIps:        n.IPs,
 		TrafficMultiplier: n.TrafficMultiplier,
 		ResetMode:         string(n.ResetMode),
 		ResetDay:          int32(n.ResetDay),
@@ -674,7 +678,10 @@ func (srv *Server) GracefulStop() {
 // Serve starts the gRPC server on the given listener
 func (srv *Server) Serve(lis net.Listener) error {
 	// Create the gRPC server
-	srv.grpcServer = grpc.NewServer()
+	srv.grpcServer = grpc.NewServer(
+		grpc.UnaryInterceptor(srv.unaryAuthInterceptor),
+		grpc.StreamInterceptor(srv.streamAuthInterceptor),
+	)
 
 	// Register all services
 	pb.RegisterUsageServiceServer(srv.grpcServer, srv)
@@ -682,4 +689,74 @@ func (srv *Server) Serve(lis net.Listener) error {
 	pb.RegisterNodeServiceServer(srv.grpcServer, srv)
 
 	return srv.grpcServer.Serve(lis)
+}
+
+func (srv *Server) unaryAuthInterceptor(
+	ctx context.Context,
+	req interface{},
+	_ *grpc.UnaryServerInfo,
+	handler grpc.UnaryHandler,
+) (interface{}, error) {
+	apiKey := apiKeyFromContext(ctx)
+	if apiKey == "" {
+		return nil, status.Error(codes.Unauthenticated, "missing Hue-API-Key")
+	}
+
+	ok, err := srv.validateAPIKey(apiKey)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "auth validation failed")
+	}
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "invalid Hue-API-Key")
+	}
+
+	return handler(ctx, req)
+}
+
+func (srv *Server) streamAuthInterceptor(
+	srvInterface interface{},
+	ss grpc.ServerStream,
+	_ *grpc.StreamServerInfo,
+	handler grpc.StreamHandler,
+) error {
+	apiKey := apiKeyFromContext(ss.Context())
+	if apiKey == "" {
+		return status.Error(codes.Unauthenticated, "missing Hue-API-Key")
+	}
+
+	ok, err := srv.validateAPIKey(apiKey)
+	if err != nil {
+		return status.Error(codes.Internal, "auth validation failed")
+	}
+	if !ok {
+		return status.Error(codes.Unauthenticated, "invalid Hue-API-Key")
+	}
+
+	return handler(srvInterface, ss)
+}
+
+func apiKeyFromContext(ctx context.Context) string {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ""
+	}
+
+	vals := md.Get("hue-api-key")
+	if len(vals) == 0 {
+		return ""
+	}
+
+	return vals[0]
+}
+
+func (srv *Server) validateAPIKey(apiKey string) (bool, error) {
+	if srv.secret != "" && apiKey == srv.secret {
+		return true, nil
+	}
+
+	if srv.userDB == nil {
+		return false, nil
+	}
+
+	return srv.userDB.ValidateOwnerAuthKey(apiKey)
 }

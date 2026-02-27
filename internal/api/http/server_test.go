@@ -59,9 +59,7 @@ func (f *httpFixture) doJSON(t *testing.T, method, path string, body any, auth b
 	req := httptest.NewRequest(method, path, bytes.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
 	if auth {
-		q := req.URL.Query()
-		q.Set("secret", f.secret)
-		req.URL.RawQuery = q.Encode()
+		req.Header.Set("Hue-API-Key", f.secret)
 	}
 
 	rr := httptest.NewRecorder()
@@ -99,7 +97,8 @@ func TestHTTPOwnerDBAuthKey(t *testing.T) {
 		t.Fatalf("upsert owner auth key: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/users?secret=db-owner-key", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/users", nil)
+	req.Header.Set("Hue-API-Key", "db-owner-key")
 	rr := httptest.NewRecorder()
 	fx.router.ServeHTTP(rr, req)
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	stdhttp "net/http"
@@ -17,6 +18,7 @@ import (
 	"github.com/hiddify/hue-go/internal/eventstore"
 	"github.com/hiddify/hue-go/internal/storage/cache"
 	"github.com/hiddify/hue-go/internal/storage/sqlite"
+	"github.com/soheilhy/cmux"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
@@ -168,15 +170,19 @@ func runServe() error {
 	)
 	grpcServer.SetUserDB(userDB)
 
-	// Start gRPC listener
+	// Start shared listener and multiplex protocols
 	lis, err := net.Listen("tcp", ":"+cfg.Port)
 	if err != nil {
-		return fmt.Errorf("failed to listen on gRPC port: %w", err)
+		return fmt.Errorf("failed to listen on port: %w", err)
 	}
+
+	m := cmux.New(lis)
+	grpcLis := m.MatchWithWriters(cmux.HTTP2MatchHeaderFieldSendSettings("content-type", "application/grpc"))
+	httpLis := m.Match(cmux.HTTP1Fast())
 
 	go func() {
 		logger.Info("gRPC server starting", zap.String("port", cfg.Port))
-		if err := grpcServer.Serve(lis); err != nil {
+		if err := grpcServer.Serve(grpcLis); err != nil && !errors.Is(err, net.ErrClosed) {
 			logger.Error("gRPC server error", zap.Error(err))
 		}
 	}()
@@ -190,19 +196,20 @@ func runServe() error {
 		cfg.AuthSecret,
 	)
 
-	httpLis, err := net.Listen("tcp", ":"+cfg.HTTPPort)
-	if err != nil {
-		return fmt.Errorf("failed to listen on HTTP port: %w", err)
-	}
-
 	httpServer := &stdhttp.Server{
 		Handler: httpRouter,
 	}
 
 	go func() {
-		logger.Info("HTTP server starting", zap.String("port", cfg.HTTPPort))
+		logger.Info("HTTP server starting", zap.String("port", cfg.Port))
 		if err := httpServer.Serve(httpLis); err != nil && err != stdhttp.ErrServerClosed {
 			logger.Error("HTTP server error", zap.Error(err))
+		}
+	}()
+
+	go func() {
+		if err := m.Serve(); err != nil && !errors.Is(err, net.ErrClosed) {
+			logger.Error("cmux serve error", zap.Error(err))
 		}
 	}()
 
@@ -226,6 +233,10 @@ func runServe() error {
 
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		logger.Error("HTTP server shutdown error", zap.Error(err))
+	}
+
+	if err := lis.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+		logger.Error("listener close error", zap.Error(err))
 	}
 
 	// Close geo handler

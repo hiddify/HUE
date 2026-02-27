@@ -30,6 +30,7 @@ const (
 type Package struct {
 	ID              string        `json:"id" db:"id"`
 	UserID          string        `json:"user_id" db:"user_id"`
+	TotalLimit      int64         `json:"total_limit" db:"total_traffic"`
 	TotalTraffic    int64         `json:"total_traffic" db:"total_traffic"`       // Bytes
 	UploadLimit     int64         `json:"upload_limit,omitempty" db:"upload_limit"`   // Bytes, 0 = unlimited
 	DownloadLimit   int64         `json:"download_limit,omitempty" db:"download_limit"` // Bytes, 0 = unlimited
@@ -49,6 +50,7 @@ type Package struct {
 // PackageCreate represents the input for creating a new package
 type PackageCreate struct {
 	UserID        string     `json:"user_id" validate:"required"`
+	TotalLimit    int64      `json:"total_limit"`
 	TotalTraffic  int64      `json:"total_traffic" validate:"min=0"`
 	UploadLimit   int64      `json:"upload_limit,omitempty"`
 	DownloadLimit int64      `json:"download_limit,omitempty"`
@@ -84,10 +86,14 @@ func (p *Package) IsExpired() bool {
 
 // HasTrafficRemaining returns true if there is traffic quota remaining
 func (p *Package) HasTrafficRemaining() bool {
-	if p.TotalTraffic == 0 {
+	total := p.TotalLimit
+	if total == 0 {
+		total = p.TotalTraffic
+	}
+	if total == 0 {
 		return true // Unlimited
 	}
-	return p.CurrentTotal < p.TotalTraffic
+	return p.CurrentTotal < total
 }
 
 // HasUploadRemaining returns true if upload quota is remaining
@@ -113,6 +119,13 @@ func (p *Package) CanUse() bool {
 
 // AddUsage adds upload and download bytes to the current counters
 func (p *Package) AddUsage(upload, download int64) {
+	if p.TotalLimit == 0 && p.TotalTraffic > 0 {
+		p.TotalLimit = p.TotalTraffic
+	}
+	if p.TotalTraffic == 0 && p.TotalLimit > 0 {
+		p.TotalTraffic = p.TotalLimit
+	}
+
 	p.CurrentUpload += upload
 	p.CurrentDownload += download
 	p.CurrentTotal += upload + download

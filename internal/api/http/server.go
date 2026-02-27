@@ -54,6 +54,8 @@ func NewServer(
 func (s *Server) setupRoutes() {
 	// Health check (no auth required)
 	s.router.GET("/health", s.healthCheck)
+	s.router.GET("/swagger", s.swaggerUI)
+	s.router.GET("/swagger/", s.swaggerUI)
 
 	// API v1 routes with auth
 	api := s.router.Group("/api/v1")
@@ -93,7 +95,7 @@ func corsMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Hue-API-Key")
 
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(http.StatusNoContent)
@@ -106,10 +108,7 @@ func corsMiddleware() gin.HandlerFunc {
 
 func (s *Server) authMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		secret := c.Query("secret")
-		if secret == "" {
-			secret = c.GetHeader("X-Auth-Secret")
-		}
+		secret := c.GetHeader("Hue-API-Key")
 
 		if secret == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
@@ -117,8 +116,14 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		if secret == s.secret {
+		if s.secret != "" && secret == s.secret {
 			c.Next()
+			return
+		}
+
+		if s.userDB == nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			c.Abort()
 			return
 		}
 
@@ -309,6 +314,7 @@ func (s *Server) createPackage(c *gin.Context) {
 	pkg := &domain.Package{
 		ID:            uuid.New().String(),
 		UserID:        req.UserID,
+		TotalLimit:    req.TotalTraffic,
 		TotalTraffic:  req.TotalTraffic,
 		UploadLimit:   req.UploadLimit,
 		DownloadLimit: req.DownloadLimit,
@@ -385,6 +391,7 @@ func (s *Server) createNode(c *gin.Context) {
 		ID:                uuid.New().String(),
 		SecretKey:         req.SecretKey,
 		Name:              req.Name,
+		IPs:               req.AllowedIPs,
 		AllowedIPs:        req.AllowedIPs,
 		TrafficMultiplier: req.TrafficMultiplier,
 		ResetMode:         req.ResetMode,
@@ -446,6 +453,7 @@ func (s *Server) createService(c *gin.Context) {
 	service := &domain.Service{
 		ID:                uuid.New().String(),
 		SecretKey:         req.SecretKey,
+		AccessToken:       req.AccessToken,
 		NodeID:            req.NodeID,
 		Name:              req.Name,
 		Protocol:          req.Protocol,

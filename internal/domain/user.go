@@ -28,6 +28,7 @@ type User struct {
 	AllowedDevices []string   `json:"allowed_devices,omitempty" db:"allowed_devices"`
 	Status         UserStatus `json:"status" db:"status"`
 	ActivePackageID *string   `json:"active_package_id,omitempty" db:"active_package_id"`
+	Metadata       map[string]any `json:"metadata,omitempty" db:"-"`
 	FirstConnectionAt *time.Time `json:"first_connection_at,omitempty" db:"first_connection_at"`
 	LastConnectionAt  *time.Time `json:"last_connection_at,omitempty" db:"last_connection_at"`
 	CreatedAt      time.Time  `json:"created_at" db:"created_at"`

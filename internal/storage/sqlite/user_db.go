@@ -498,6 +498,13 @@ func (db *UserDB) DeleteUser(id string) error {
 
 // CreatePackage creates a new package
 func (db *UserDB) CreatePackage(pkg *domain.Package) error {
+	if pkg.TotalLimit == 0 && pkg.TotalTraffic > 0 {
+		pkg.TotalLimit = pkg.TotalTraffic
+	}
+	if pkg.TotalTraffic == 0 && pkg.TotalLimit > 0 {
+		pkg.TotalTraffic = pkg.TotalLimit
+	}
+
 	now := time.Now()
 	_, err := db.Exec(`
 		INSERT INTO packages (id, user_id, total_traffic, upload_limit, download_limit, reset_mode, duration, start_at, max_concurrent, status, current_upload, current_download, current_total, expires_at, created_at, updated_at)
@@ -538,6 +545,7 @@ func (db *UserDB) GetPackage(id string) (*domain.Package, error) {
 	if expiresAt.Valid {
 		pkg.ExpiresAt = &expiresAt.Time
 	}
+	pkg.TotalLimit = pkg.TotalTraffic
 
 	pkg.CreatedAt, err = parseSQLiteTime(createdAtRaw)
 	if err != nil {
@@ -583,6 +591,7 @@ func (db *UserDB) GetPackageByUserID(userID string) (*domain.Package, error) {
 	if expiresAt.Valid {
 		pkg.ExpiresAt = &expiresAt.Time
 	}
+	pkg.TotalLimit = pkg.TotalTraffic
 
 	pkg.CreatedAt, err = parseSQLiteTime(createdAtRaw)
 	if err != nil {
@@ -633,6 +642,13 @@ func (db *UserDB) ResetPackageUsage(id string) error {
 
 // CreateNode creates a new node
 func (db *UserDB) CreateNode(node *domain.Node) error {
+	if len(node.IPs) == 0 && len(node.AllowedIPs) > 0 {
+		node.IPs = append([]string(nil), node.AllowedIPs...)
+	}
+	if len(node.AllowedIPs) == 0 && len(node.IPs) > 0 {
+		node.AllowedIPs = append([]string(nil), node.IPs...)
+	}
+
 	allowedIPs, _ := json.Marshal(node.AllowedIPs)
 	now := time.Now()
 
@@ -670,7 +686,9 @@ func (db *UserDB) GetNode(id string) (*domain.Node, error) {
 
 	if allowedIPs.Valid {
 		json.Unmarshal([]byte(allowedIPs.String), &node.AllowedIPs)
+		node.IPs = append([]string(nil), node.AllowedIPs...)
 	}
+	node.CurrentTotal = node.CurrentUpload + node.CurrentDownload
 
 	node.CreatedAt, err = parseSQLiteTime(createdAtRaw)
 	if err != nil {
@@ -708,7 +726,9 @@ func (db *UserDB) GetNodeBySecretKey(secretKey string) (*domain.Node, error) {
 
 	if allowedIPs.Valid {
 		json.Unmarshal([]byte(allowedIPs.String), &node.AllowedIPs)
+		node.IPs = append([]string(nil), node.AllowedIPs...)
 	}
+	node.CurrentTotal = node.CurrentUpload + node.CurrentDownload
 
 	node.CreatedAt, err = parseSQLiteTime(createdAtRaw)
 	if err != nil {
@@ -750,7 +770,9 @@ func (db *UserDB) ListNodes() ([]*domain.Node, error) {
 
 		if allowedIPs.Valid {
 			json.Unmarshal([]byte(allowedIPs.String), &node.AllowedIPs)
+			node.IPs = append([]string(nil), node.AllowedIPs...)
 		}
+		node.CurrentTotal = node.CurrentUpload + node.CurrentDownload
 
 		node.CreatedAt, err = parseSQLiteTime(createdAtRaw)
 		if err != nil {
@@ -789,6 +811,13 @@ func (db *UserDB) DeleteNode(id string) error {
 
 // CreateService creates a new service
 func (db *UserDB) CreateService(service *domain.Service) error {
+	if service.SecretKey == "" && service.AccessToken != "" {
+		service.SecretKey = service.AccessToken
+	}
+	if service.AccessToken == "" && service.SecretKey != "" {
+		service.AccessToken = service.SecretKey
+	}
+
 	authMethods, _ := json.Marshal(service.AllowedAuthMethods)
 	now := time.Now()
 
@@ -844,6 +873,9 @@ func (db *UserDB) GetService(id string) (*domain.Service, error) {
 	if authMethods.Valid {
 		json.Unmarshal([]byte(authMethods.String), &service.AllowedAuthMethods)
 	}
+	if service.AccessToken == "" && service.SecretKey != "" {
+		service.AccessToken = service.SecretKey
+	}
 
 	service.CreatedAt, err = parseSQLiteTime(createdAtRaw)
 	if err != nil {
@@ -881,6 +913,9 @@ func (db *UserDB) GetServiceBySecretKey(secretKey string) (*domain.Service, erro
 
 	if authMethods.Valid {
 		json.Unmarshal([]byte(authMethods.String), &service.AllowedAuthMethods)
+	}
+	if service.AccessToken == "" && service.SecretKey != "" {
+		service.AccessToken = service.SecretKey
 	}
 
 	service.CreatedAt, err = parseSQLiteTime(createdAtRaw)

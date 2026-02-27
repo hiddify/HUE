@@ -18,6 +18,7 @@ const (
 type Service struct {
 	ID              string      `json:"id" db:"id"`
 	SecretKey       string      `json:"-" db:"secret_key"` // Omit from JSON responses
+	AccessToken     string      `json:"access_token,omitempty" db:"-"`
 	NodeID          string      `json:"node_id" db:"node_id"`
 	Name            string      `json:"name" db:"name"`
 	Protocol        string      `json:"protocol" db:"protocol"` // vless, trojan, wireguard, etc.
@@ -33,6 +34,7 @@ type Service struct {
 type ServiceCreate struct {
 	NodeID            string      `json:"node_id" validate:"required"`
 	SecretKey         string      `json:"secret_key" validate:"required"`
+	AccessToken       string      `json:"access_token,omitempty"`
 	Name              string      `json:"name" validate:"required"`
 	Protocol          string      `json:"protocol" validate:"required"`
 	AllowedAuthMethods []AuthMethod `json:"allowed_auth_methods" validate:"required"`
