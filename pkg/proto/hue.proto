@@ -1,0 +1,598 @@
+syntax = "proto3";
+
+package hue;
+
+option go_package = "github.com/hiddify/hue-go/pkg/proto";
+
+import "google/protobuf/struct.proto";
+import "google/api/annotations.proto";
+
+// Common messages
+
+message Empty {}
+
+message ErrorResponse {
+    string code = 1;
+    string message = 2;
+}
+
+enum UserStatus {
+    USER_STATUS_UNSPECIFIED = 0;
+    USER_STATUS_ACTIVE = 1;
+    USER_STATUS_SUSPENDED = 2;
+    USER_STATUS_EXPIRED = 3;
+    USER_STATUS_FINISH = 4;
+    USER_STATUS_INACTIVE = 5;
+}
+
+enum ResetMode {
+    RESET_MODE_UNSPECIFIED = 0;
+    NO_RESET = 1;
+    HOURLY = 2;
+    DAILY = 3;
+    WEEKLY = 4;
+    MONTHLY = 5;
+    YEARLY = 6;
+}
+
+enum PackageStatus {
+    PACKAGE_STATUS_UNSPECIFIED = 0;
+    PACKAGE_STATUS_ACTIVE = 1;
+    PACKAGE_STATUS_EXPIRED = 2;
+    PACKAGE_STATUS_FINISH = 3;
+    PACKAGE_STATUS_SUSPENDED = 4;
+}
+
+enum ManagerPackageStatus {
+    MANAGER_PACKAGE_STATUS_UNSPECIFIED = 0;
+    MANAGER_PACKAGE_STATUS_INACTIVE = 1;
+    MANAGER_PACKAGE_STATUS_ACTIVE = 2;
+}
+
+enum HealthStatus {
+    HEALTH_STATUS_UNSPECIFIED = 0;
+    HEALTH_STATUS_SERVING = 1;
+    HEALTH_STATUS_NOT_SERVING = 2;
+}
+
+// User messages
+
+message UserInfo {
+    string id = 1;
+    repeated string groups = 2;
+    UserStatus status = 3;
+    string active_package_id = 4;
+    int64 first_connection_at = 5;
+    int64 last_connection_at = 6;
+    int64 created_at = 7;
+    int64 updated_at = 8;
+    map<string, google.protobuf.Value> metadata = 9;
+    string manager_id = 10;
+}
+
+message UserAuthMethod {
+    string user_id = 1;
+    string uuid = 2;
+    string username = 3;
+    string password = 4;
+    string public_key = 5;
+    string private_key = 6;
+    repeated string ca_cert_list = 7;
+    repeated string allowed_devices = 8;
+    map<string, google.protobuf.Value> custom = 9;
+}
+
+message UserAuthMethodRequest {
+    string uuid = 1;
+    string username = 2;
+    string password = 3;
+    string public_key = 4;
+    string private_key = 5;
+    repeated string ca_cert_list = 6;
+    repeated string allowed_devices = 7;
+    map<string, google.protobuf.Value> custom = 9;
+}
+
+message NodeAuthMethod {
+    string node_id = 1;
+    string secret_key = 2;
+    map<string, google.protobuf.Value> custom = 9;
+}
+
+message NodeAuthMethodRequest {
+    string secret_key = 1;
+    map<string, google.protobuf.Value> custom = 9;
+}
+
+message CreateUserPackageRequest {
+    int64 total_limit = 1;
+    int64 upload_limit = 2;
+    int64 download_limit = 3;
+    ResetMode reset_mode = 4;
+    int64 duration = 5;
+    int64 start_at = 6;
+    int32 max_concurrent = 7;
+}
+
+message User {
+    UserInfo info = 1;
+    UserAuthMethod auth_method = 2;
+}
+
+message CreateUserRequest {
+    UserInfo user_info = 1;
+    UserAuthMethodRequest auth_method = 2;
+    CreateUserPackageRequest package_request = 3;
+}
+
+message UpdateUserRequest {
+    string id = 1;
+    UserInfo user_info = 2;
+    UserAuthMethodRequest auth_method = 3;
+    string active_package_id = 4;
+}
+
+message GetUserRequest {
+    string id = 1;
+}
+
+message ListUsersRequest {
+    UserStatus status = 1;
+    string group = 2;
+    string search = 3;
+    int32 limit = 4;
+    int32 offset = 5;
+}
+
+message ListUsersResponse {
+    repeated User users = 1;
+    int32 total = 2;
+}
+
+message DeleteUserRequest {
+    string id = 1;
+}
+
+// Package messages
+
+message Package {
+    string id = 1;
+    string user_id = 2;
+    int64 total_limit = 3;
+    int64 upload_limit = 4;
+    int64 download_limit = 5;
+    ResetMode reset_mode = 6;
+    int64 duration = 7;
+    int64 start_at = 8;
+    int32 max_concurrent = 9;
+    PackageStatus status = 10;
+    int64 current_upload = 11;
+    int64 current_download = 12;
+    int64 current_total = 13;
+    int64 expires_at = 14;
+    int64 created_at = 15;
+    int64 updated_at = 16;
+}
+
+message CreatePackageRequest {
+    string user_id = 1;
+    int64 total_limit = 2;
+    int64 upload_limit = 3;
+    int64 download_limit = 4;
+    ResetMode reset_mode = 5;
+    int64 duration = 6;
+    int64 start_at = 7;
+    int32 max_concurrent = 8;
+}
+
+message GetPackageRequest {
+    string id = 1;
+}
+
+message GetPackageByUserRequest {
+    string user_id = 1;
+}
+
+message DeletePackageRequest {
+    string id = 1;
+}
+
+// Node messages
+
+message Node {
+    string name = 2;
+    double traffic_multiplier = 4;
+    ResetMode reset_mode = 5;
+    int32 reset_day = 6;
+    int64 current_upload = 7;
+    int64 current_download = 8;
+    int64 current_total = 9;
+    string country = 10;
+    string city = 11;
+    string isp = 12;
+    int64 created_at = 13;
+    int64 updated_at = 14;
+}
+
+message CreateNodeRequest {
+    string name = 1;
+    NodeAuthMethodRequest auth_method = 2;
+    double traffic_multiplier = 4;
+    ResetMode reset_mode = 5;
+    int32 reset_day = 6;
+    string country = 7;
+    string city = 8;
+    string isp = 9;
+}
+
+message GetNodeRequest {
+    string id = 1;
+    string ip = 2;
+}
+
+message ListNodesResponse {
+    repeated Node nodes = 1;
+}
+
+message DeleteNodeRequest {
+    string id = 1;
+}
+
+// Service messages
+
+message Service {
+    string id = 1;
+    string node_id = 2;
+    string name = 3;
+    repeated string allowed_auth_methods = 4;
+    string callback_url = 5;
+    string access_token = 6;
+    int64 created_at = 7;
+    int64 updated_at = 8;
+}
+
+message CreateServiceRequest {
+    string name = 1;
+    repeated string allowed_auth_methods = 2;
+    string callback_url = 3;
+}
+
+message GetServiceRequest {
+    string id = 1;
+}
+
+message DeleteServiceRequest {
+    string id = 1;
+}
+
+// Manager messages
+
+message Manager {
+    string id = 1;
+    string name = 2;
+    string parent_id = 3;
+    map<string, google.protobuf.Value> metadata = 4;
+    int64 created_at = 5;
+    int64 updated_at = 6;
+}
+
+message ManagerPackage {
+    string manager_id = 1;
+    int64 total_limit = 2;
+    int64 upload_limit = 3;
+    int64 download_limit = 4;
+    ResetMode reset_mode = 5;
+    int64 duration = 6;
+    int64 start_at = 7;
+    int32 max_sessions = 8;
+    int32 max_online_users = 9;
+    int32 max_active_users = 10;
+    ManagerPackageStatus status = 11;
+    int64 current_upload = 12;
+    int64 current_download = 13;
+    int64 current_total = 14;
+    int64 current_sessions = 15;
+    int64 current_online_users = 16;
+    int64 current_active_users = 17;
+    int64 created_at = 18;
+    int64 updated_at = 19;
+}
+
+message CreateManagerRequest {
+    Manager manager = 1;
+    ManagerPackage package = 2;
+}
+
+message GetManagerRequest {
+    string id = 1;
+}
+
+message ListManagersRequest {
+    int32 limit = 1;
+    int32 offset = 2;
+}
+
+message ListManagersResponse {
+    repeated Manager managers = 1;
+    int32 total = 2;
+}
+
+message DeleteManagerRequest {
+    string id = 1;
+}
+
+// Usage messages
+
+message UsageReport {
+    string user_id = 1;
+    int64 upload = 2;
+    int64 download = 3;
+    repeated string client_ips = 4;
+    repeated string tags = 5;
+    int64 timestamp = 6;
+}
+
+enum UsageReportStatus {
+    USAGE_REPORT_STATUS_UNSPECIFIED = 0;
+    ACTIVE = 1;
+    QUOTA_EXCEEDED = 2;
+    SESSION_LIMIT_HIT = 3;
+    PENALTY_APPLIED = 4;
+    REJECTED = 5;
+}
+
+message UsageReportResult {
+    string user_id = 1;
+    UsageReportStatus status = 2;
+    string reason = 3;
+}
+
+message ReportUsageRequest {
+    UsageReport report = 1;
+}
+
+message ReportUsageResponse {
+    UsageReportResult result = 1;
+}
+
+message BatchReportUsageRequest {
+    repeated UsageReport reports = 1;
+}
+
+message BatchReportUsageResponse {
+    repeated UsageReportResult results = 1;
+}
+
+message DisconnectCommand {
+    string user_id = 1;
+    string reason = 2;
+}
+
+message GetDisconnectCommandsRequest {
+    int32 limit = 1;
+}
+
+message GetDisconnectCommandsResponse {
+    repeated DisconnectCommand commands = 1;
+}
+
+message AuthenticateRequest {
+    NodeAuthMethodRequest auth_method = 1;
+}
+
+message AuthenticateResponse {
+    bool success = 1;
+    string node_id = 2;
+    string error = 3;
+}
+
+message HeartbeatRequest {
+    string node_id = 1;
+}
+
+message HeartbeatResponse {
+    bool acknowledged = 1;
+}
+
+// Event messages
+
+message Event {
+    string id = 1;
+    string type = 2;
+    string user_id = 3;
+    string package_id = 4;
+    string node_id = 5;
+    string service_id = 6;
+    repeated string tags = 7;
+    bytes metadata = 8;
+    int64 timestamp = 9;
+}
+
+message GetEventsRequest {
+    string type = 1;
+    string user_id = 2;
+    int64 start_time = 3;
+    int64 end_time = 4;
+    int32 limit = 5;
+}
+
+message GetEventsResponse {
+    repeated Event events = 1;
+}
+
+// Health check
+
+message HealthCheckRequest {
+    string service = 1;
+}
+
+message HealthCheckResponse {
+    HealthStatus status = 1;
+}
+
+// Services
+
+// UsageService handles usage reporting from nodes
+service UsageService {
+    rpc ReportUsage(ReportUsageRequest) returns (ReportUsageResponse) {
+        option (google.api.http) = {
+            post: "/api/v1/usage/report"
+            body: "*"
+        };
+    }
+    rpc BatchReportUsage(BatchReportUsageRequest) returns (BatchReportUsageResponse) {
+        option (google.api.http) = {
+            post: "/api/v1/usage/report:batch"
+            body: "*"
+        };
+    }
+    rpc ReportUsageStream(stream ReportUsageRequest) returns (stream ReportUsageResponse);
+    rpc GetDisconnectCommands(GetDisconnectCommandsRequest) returns (GetDisconnectCommandsResponse) {
+        option (google.api.http) = {
+            get: "/api/v1/usage/disconnect-commands"
+        };
+    }
+}
+
+// AdminService handles administrative operations
+service AdminService {
+    // User operations
+    rpc CreateUser(CreateUserRequest) returns (User) {
+        option (google.api.http) = {
+            post: "/api/v1/users"
+            body: "*"
+        };
+    }
+    rpc GetUser(GetUserRequest) returns (User) {
+        option (google.api.http) = {
+            get: "/api/v1/users/{id}"
+        };
+    }
+    rpc ListUsers(ListUsersRequest) returns (ListUsersResponse) {
+        option (google.api.http) = {
+            get: "/api/v1/users"
+        };
+    }
+    rpc UpdateUser(UpdateUserRequest) returns (User) {
+        option (google.api.http) = {
+            put: "/api/v1/users/{id}"
+            body: "*"
+        };
+    }
+    rpc DeleteUser(DeleteUserRequest) returns (Empty) {
+        option (google.api.http) = {
+            delete: "/api/v1/users/{id}"
+        };
+    }
+    
+    // Package operations
+    rpc CreatePackage(CreatePackageRequest) returns (Package) {
+        option (google.api.http) = {
+            post: "/api/v1/packages"
+            body: "*"
+        };
+    }
+    rpc GetPackage(GetPackageRequest) returns (Package) {
+        option (google.api.http) = {
+            get: "/api/v1/packages/{id}"
+        };
+    }
+    rpc GetPackageByUser(GetPackageByUserRequest) returns (Package) {
+        option (google.api.http) = {
+            get: "/api/v1/users/{user_id}/package"
+        };
+    }
+    rpc DeletePackage(DeletePackageRequest) returns (Empty) {
+        option (google.api.http) = {
+            delete: "/api/v1/packages/{id}"
+        };
+    }
+    
+    // Node operations
+    rpc CreateNode(CreateNodeRequest) returns (Node) {
+        option (google.api.http) = {
+            post: "/api/v1/nodes"
+            body: "*"
+        };
+    }
+    rpc GetNode(GetNodeRequest) returns (Node) {
+        option (google.api.http) = {
+            get: "/api/v1/nodes/{id}"
+        };
+    }
+    rpc ListNodes(Empty) returns (ListNodesResponse) {
+        option (google.api.http) = {
+            get: "/api/v1/nodes"
+        };
+    }
+    rpc DeleteNode(DeleteNodeRequest) returns (Empty) {
+        option (google.api.http) = {
+            delete: "/api/v1/nodes/{id}"
+        };
+    }
+    
+    // Service operations
+    rpc CreateService(CreateServiceRequest) returns (Service) {
+        option (google.api.http) = {
+            post: "/api/v1/services"
+            body: "*"
+        };
+    }
+    rpc GetService(GetServiceRequest) returns (Service) {
+        option (google.api.http) = {
+            get: "/api/v1/services/{id}"
+        };
+    }
+    rpc DeleteService(DeleteServiceRequest) returns (Empty) {
+        option (google.api.http) = {
+            delete: "/api/v1/services/{id}"
+        };
+    }
+
+    // Manager operations
+    rpc CreateManager(CreateManagerRequest) returns (Manager) {
+        option (google.api.http) = {
+            post: "/api/v1/managers"
+            body: "*"
+        };
+    }
+    rpc GetManager(GetManagerRequest) returns (Manager) {
+        option (google.api.http) = {
+            get: "/api/v1/managers/{id}"
+        };
+    }
+    rpc ListManagers(ListManagersRequest) returns (ListManagersResponse) {
+        option (google.api.http) = {
+            get: "/api/v1/managers"
+        };
+    }
+    rpc DeleteManager(DeleteManagerRequest) returns (Empty) {
+        option (google.api.http) = {
+            delete: "/api/v1/managers/{id}"
+        };
+    }
+    
+    // Event operations
+    rpc GetEvents(GetEventsRequest) returns (GetEventsResponse) {
+        option (google.api.http) = {
+            get: "/api/v1/events"
+        };
+    }
+}
+
+service NodeService {
+    rpc Authenticate(AuthenticateRequest) returns (AuthenticateResponse) {
+        option (google.api.http) = {
+            post: "/api/v1/nodes/authenticate"
+            body: "*"
+        };
+    }
+
+    rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse) {
+        option (google.api.http) = {
+            post: "/api/v1/nodes/heartbeat"
+            body: "*"
+        };
+    }
+}
+
