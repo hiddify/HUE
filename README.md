@@ -1,4 +1,4 @@
-# 🚀 Hiddify Usage Engine (HUE)
+# 🚀 Hiddify Usage Engine (HUE) - Go
 
 **A universal, protocol-agnostic Usage & Subscription Control Plane.**
 
@@ -49,6 +49,97 @@ graph TD
 
 ---
 
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Go 1.22+ (for building from source)
+- Protocol Buffers compiler (`protoc`) - optional, for regenerating proto files
+- SQLite 3
+
+### Build from Source
+
+```bash
+# Clone the repository
+git clone https://github.com/hiddify/hue-go.git
+cd hue-go
+
+# Install dependencies
+go mod tidy
+
+# Build in release mode
+make build
+
+# The binary will be at bin/hue
+```
+
+### Using Docker
+
+```bash
+# Build the image
+docker build -t hue -f deployments/docker/Dockerfile .
+
+# Run with environment variables
+docker run -d \
+  -p 50051:50051 \
+  -p 50052:50052 \
+  -e HUE_AUTH_SECRET=your-secret-key \
+  -v hue-data:/data \
+  --name hue \
+  hue
+```
+
+Or use docker-compose:
+
+```bash
+# Run with docker-compose
+docker-compose -f deployments/docker/docker-compose.yml up -d
+```
+
+### Configuration
+
+HUE is configured entirely through environment variables. See `config.env.example` for all options.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `HUE_DB_URL` | Database connection string | `sqlite://./hue.db` |
+| `HUE_PORT` | gRPC server port | `50051` |
+| `HUE_AUTH_SECRET` | Master authentication secret | Required |
+| `HUE_LOG_LEVEL` | Logging verbosity | `info` |
+| `HUE_DB_FLUSH_INTERVAL` | Batch write interval | `5m` |
+| `HUE_CONCURRENT_WINDOW` | Session counting window | `5m` |
+| `HUE_PENALTY_DURATION` | Penalty duration | `10m` |
+| `HUE_MAXMIND_DB_PATH` | Path to MaxMind GeoLite2 database | `""` |
+| `HUE_EVENT_STORE_TYPE` | Event storage type (`db`, `file`, `none`) | `db` |
+
+---
+
+## 📡 API Reference
+
+### gRPC Services
+
+HUE exposes three gRPC services:
+
+1. **UsageService** (port 50051) - Usage reporting from nodes
+2. **AdminService** (port 50051) - User/package/node management
+3. **NodeService** (port 50051) - Node authentication and commands
+
+### HTTP REST API (port 50052)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/api/v1/users` | GET/POST | List/create users |
+| `/api/v1/users/{id}` | GET/PUT/DELETE | Get/update/delete user |
+| `/api/v1/packages` | POST | Create package |
+| `/api/v1/nodes` | GET/POST | List/create nodes |
+| `/api/v1/services` | POST | Create service |
+| `/api/v1/stats` | GET | Get statistics |
+
+All endpoints require `?secret=<HUE_AUTH_SECRET>` query parameter.
+
+---
+
 ## 🛠️ Scalability Model
 
 | Scale | Strategy | I/O Management |
@@ -58,9 +149,42 @@ graph TD
 
 ---
 
+## 📁 Project Structure
+
+```
+hue-go/
+├── cmd/hue/              # Main binary
+├── internal/
+│   ├── api/
+│   │   ├── grpc/         # gRPC services
+│   │   └── http/         # REST API
+│   ├── auth/             # Authentication & locking
+│   ├── config/           # Configuration
+│   ├── domain/           # Domain models
+│   ├── engine/           # Core engine (quota, session, penalty, geo)
+│   ├── eventstore/       # Event sourcing
+│   └── storage/
+│       ├── cache/        # In-memory cache
+│       └── sqlite/       # SQLite database layer
+├── pkg/proto/            # Protocol buffer definitions
+├── deployments/
+│   ├── docker/           # Docker files
+│   └── k8s/              # Kubernetes manifests
+├── go.mod
+├── Makefile
+└── README.md
+```
+
+---
+
 ## 🗺️ Roadmap
 
-- [ ] Core gRPC Ingestor & Quota Engine
+- [x] Core gRPC Ingestor & Quota Engine
+- [x] SQLite database with WAL mode
+- [x] Buffered write system
+- [x] Concurrent session enforcement
+- [x] Event sourcing
+- [x] HTTP REST API
 - [ ] Xray, Singbox, & WireGuard Adapters
 - [ ] Advanced Traffic Tagging
 - [ ] **RADIUS / NAS Support (Final Phase Priority)**

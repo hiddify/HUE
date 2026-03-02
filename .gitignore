@@ -1,0 +1,6 @@
+bin/
+hue.db
+hue_active.db
+hue_history.db
+PR.json
+tools/
