@@ -27,11 +27,14 @@ clean:
 
 # Generate protobuf files
 proto:
+	git clone https://github.com/googleapis/googleapis.git third_party/googleapis --depth 1
+
 	protoc --go_out=. --go_opt=paths=source_relative \
 		--go-grpc_out=. --go-grpc_opt=paths=source_relative \
 		--grpc-gateway_out=. --grpc-gateway_opt=paths=source_relative \
 		--openapiv2_out=. --openapiv2_opt=allow_merge=true,merge_file_name=hue \
-		pkg/proto/*.proto
+		-I third_party/googleapis   -I proto \
+		proto/*.proto
 
 # Install dependencies
 deps:
