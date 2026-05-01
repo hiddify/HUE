@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>HUE — API explorer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/swagger-ui/swagger-ui.css">
+  <link rel="icon" type="image/png" href="/swagger-ui/favicon-32x32.png" sizes="32x32">
+  <link rel="icon" type="image/png" href="/swagger-ui/favicon-16x16.png" sizes="16x16">
+  <style>
+    body { margin: 0; background: #fafafa; }
+    .topbar { display: none; } /* hide the default Swagger logo bar */
+    .hue-banner {
+      background: #1a1a2e; color: #fff; padding: 14px 22px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
+    }
+    .hue-banner b { color: #ff7a59; }
+    .hue-banner code {
+      background: #2a2a4a; padding: 2px 6px; border-radius: 3px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="hue-banner">
+    HUE API explorer — generated from
+    <code>api/proto/hue/v1/hue.proto</code>.
+    Click <b>Authorize</b> and paste <code>Bearer &lt;your-token&gt;</code>
+    (e.g. <code>Bearer mgr_…</code>) before calling protected endpoints.
+  </div>
+  <div id="swagger-ui"></div>
+  <script src="/swagger-ui/swagger-ui-bundle.js" charset="UTF-8"></script>
+  <script src="/swagger-ui/swagger-ui-standalone-preset.js" charset="UTF-8"></script>
+  <script>
+    window.onload = () => {
+      window.ui = SwaggerUIBundle({
+        url: "/openapi.json",
+        dom_id: "#swagger-ui",
+        deepLinking: true,
+        defaultModelsExpandDepth: 1,
+        defaultModelExpandDepth: 2,
+        docExpansion: "list",
+        filter: true,
+        presets: [
+          SwaggerUIBundle.presets.apis,
+          SwaggerUIStandalonePreset,
+        ],
+        plugins: [SwaggerUIBundle.plugins.DownloadUrl],
+        layout: "StandaloneLayout",
+        // Persist the bearer token across reloads so iterating on a call
+        // doesn't require pasting it every time.
+        persistAuthorization: true,
+      });
+    };
+  </script>
+</body>
+</html>

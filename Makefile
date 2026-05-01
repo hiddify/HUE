@@ -27,6 +27,21 @@ ent: ## Regenerate ent client from internal/ent/schema/*.go
 	$(GO) generate ./internal/ent/...
 	$(GO) mod tidy
 
+# Pin a single version, refresh in one step. Update SWAGGER_UI_VERSION when
+# you want to bump; this target is the only sanctioned source of truth for
+# the vendored swagger-ui-dist files committed to web/swagger-ui/.
+SWAGGER_UI_VERSION ?= 5.18.2
+
+.PHONY: swagger-ui-update
+swagger-ui-update: ## Refresh the vendored swagger-ui-dist assets in web/swagger-ui/
+	@mkdir -p web/swagger-ui
+	@for f in swagger-ui.css swagger-ui-bundle.js swagger-ui-standalone-preset.js favicon-32x32.png favicon-16x16.png; do \
+		echo "  fetching $$f"; \
+		curl -fsSL "https://unpkg.com/swagger-ui-dist@$(SWAGGER_UI_VERSION)/$$f" -o "web/swagger-ui/$$f"; \
+	done
+	@echo "$(SWAGGER_UI_VERSION)" > web/swagger-ui/VERSION
+	@echo "vendored swagger-ui-dist@$(SWAGGER_UI_VERSION) → web/swagger-ui/"
+
 # ----------------------------------------------------------------------------
 # Build / run
 # ----------------------------------------------------------------------------

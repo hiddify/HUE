@@ -21,8 +21,11 @@ package hue
 import (
 	"context"
 	"crypto/tls"
+	"embed"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -48,6 +51,45 @@ import (
 	"github.com/hiddify/hue/internal/server"
 	"github.com/hiddify/hue/internal/service"
 )
+
+// Swagger / OpenAPI assets — fully bundled into the binary so the API
+// explorer works air-gapped. No third-party CDN at runtime; refresh the
+// vendored swagger-ui-dist files via `make swagger-ui-update`.
+
+//go:embed gen/openapi/hue.swagger.json
+var openapiSpec []byte
+
+//go:embed web/swagger.html
+var swaggerHTML []byte
+
+//go:embed all:web/swagger-ui
+var swaggerUIFS embed.FS
+
+// openapiSpecAugmented adds a `bearer` security definition to the spec
+// at package-load time so the "Authorize" button in Swagger UI works
+// without requiring the proto file to import the openapiv2 annotations.
+var openapiSpecAugmented = augmentOpenAPISpec(openapiSpec)
+
+func augmentOpenAPISpec(orig []byte) []byte {
+	var doc map[string]any
+	if err := json.Unmarshal(orig, &doc); err != nil {
+		return orig
+	}
+	doc["securityDefinitions"] = map[string]any{
+		"bearer": map[string]any{
+			"type":        "apiKey",
+			"in":          "header",
+			"name":        "Authorization",
+			"description": "Per-actor API key. Format: `Bearer <kind>_<token>`, e.g. `Bearer mgr_abcdef…`. Issue keys via POST /v1/apiKeys.",
+		},
+	}
+	doc["security"] = []map[string]any{{"bearer": []string{}}}
+	out, err := json.Marshal(doc)
+	if err != nil {
+		return orig
+	}
+	return out
+}
 
 // Build info — overridable via -ldflags. Library consumers can read these
 // to surface the same info from their own --version output.
@@ -265,6 +307,31 @@ func Run(ctx context.Context, cfg *Config, logger *slog.Logger) error {
 	}
 
 	rootHandler := http.NewServeMux()
+	rootHandler.HandleFunc("/openapi.json", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		_, _ = w.Write(openapiSpecAugmented)
+	})
+	rootHandler.HandleFunc("/swagger", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/swagger/", http.StatusMovedPermanently)
+	})
+	rootHandler.HandleFunc("/swagger/", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		_, _ = w.Write(swaggerHTML)
+	})
+	rootHandler.HandleFunc("/docs", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/swagger/", http.StatusMovedPermanently)
+	})
+	// /swagger-ui/* serves the vendored swagger-ui-dist assets (CSS, JS,
+	// favicon). The embed.FS is rooted at web/swagger-ui — strip the
+	// nested prefix and the URL prefix so the file server sees a flat tree.
+	swaggerUISub, err := fs.Sub(swaggerUIFS, "web/swagger-ui")
+	if err != nil {
+		return fmt.Errorf("swagger-ui sub fs: %w", err)
+	}
+	rootHandler.Handle("/swagger-ui/", http.StripPrefix("/swagger-ui/",
+		swaggerUICacheControl(http.FileServer(http.FS(swaggerUISub)))))
 	rootHandler.Handle("/", gwMux)
 
 	dispatch := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -333,6 +400,26 @@ func Run(ctx context.Context, cfg *Config, logger *slog.Logger) error {
 // + Content-Type starting with application/grpc.
 func isGRPC(r *http.Request) bool {
 	return r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc")
+}
+
+// swaggerUICacheControl wraps an http.FileServer with a long-cache header
+// for the immutable JS/CSS assets and refuses directory listings (Go's
+// FileServer would otherwise render the contents of web/swagger-ui as
+// HTML — fine but unnecessary file disclosure). They're vendored at
+// known versions and only change when `make swagger-ui-update` is run,
+// so a year-long cache is correct.
+func swaggerUICacheControl(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// After StripPrefix, r.URL.Path is what's left after "/swagger-ui/".
+		// Empty or trailing-slash paths would land Go's FileServer on a
+		// directory; refuse them — only specific files are servable.
+		if r.URL.Path == "" || strings.HasSuffix(r.URL.Path, "/") {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		h.ServeHTTP(w, r)
+	})
 }
 
 // headerMatcher passes the Authorization header through to gRPC metadata

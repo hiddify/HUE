@@ -17,6 +17,17 @@ Throughout this guide:
 
 ---
 
+## Easiest way to explore: open Swagger UI
+
+Every HUE instance serves an interactive API explorer at
+`https://your-host:8443/swagger/`. Click **Authorize**, paste
+`Bearer <your-token>`, then click **Try it out** on any RPC to call it
+without leaving the browser. The spec lives at `/openapi.json`; both
+endpoints are unauthenticated (they expose schema only, never data).
+
+The rest of this manual uses curl + grpcurl so you can copy-paste into
+scripts, but the Swagger UI is often faster for one-off pokes.
+
 ## Step 0 — Sanity check
 
 Confirm the server is reachable and your token works:

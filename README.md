@@ -49,8 +49,10 @@ grpcurl -insecure \
   localhost:8443 hue.v1.AdminService/ListUsers
 ```
 
-Both calls hit the same Go function. See [docs/api.md](docs/api.md) for the
-full surface.
+Both calls hit the same Go function. For an interactive explorer,
+open `https://localhost:8443/swagger/` — Swagger UI is bundled into the
+binary and served at runtime, with the **Authorize** button pre-wired
+for `Bearer` tokens. See [docs/api.md](docs/api.md) for the full surface.
 
 ## Architecture in one diagram
 
