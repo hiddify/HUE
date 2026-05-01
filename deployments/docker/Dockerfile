@@ -21,7 +21,10 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=linux \
     go build -trimpath -buildvcs=false \
-      -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${BUILD_DATE}" \
+      -ldflags="-s -w \
+        -X github.com/hiddify/hue.Version=${VERSION} \
+        -X github.com/hiddify/hue.Commit=${COMMIT} \
+        -X github.com/hiddify/hue.Date=${BUILD_DATE}" \
       -o /out/hue ./cmd/hue
 
 FROM gcr.io/distroless/static-debian12:nonroot AS runtime

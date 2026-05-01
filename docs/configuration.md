@@ -1,7 +1,9 @@
 # Configuration
 
 HUE reads its configuration entirely from environment variables — no
-config file, no flags. Defined in [internal/config/config.go](../internal/config/config.go).
+config file, no command-line flags. The `Config` type is defined at
+[hue.go](../hue.go); it lives at the root of the module so it's also
+importable from external Go programs that embed HUE as a library.
 
 Every variable is also addressable as `<NAME>_FILE` for secret-file
 mounts (Docker / Kubernetes); when set, the file's contents replace the
@@ -75,13 +77,31 @@ On `SIGINT` / `SIGTERM`, HUE flips its standard gRPC health to
 `NOT_SERVING`, then drains in-flight requests with this timeout, then
 calls `grpcServer.GracefulStop()` and closes the ent client.
 
-## Reading config in tests
+## Reading config in tests or from external programs
+
+The `Config` type is at the module root, so you can construct it
+directly or call `LoadConfig` to read from the environment:
 
 ```go
-import "github.com/sethvargo/go-envconfig"
-import "github.com/hiddify/hue/internal/config"
+import "github.com/hiddify/hue"
 
 ctx := context.Background()
 t.Setenv("HUE_DB_URL", "postgres://...")
-cfg, err := config.Load(ctx)
+cfg, err := hue.LoadConfig(ctx)
+```
+
+Or build it programmatically and skip env entirely:
+
+```go
+cfg := &hue.Config{
+    Addr:             ":8443",
+    DatabaseURL:      "postgres://hue:hue@localhost:5432/hue?sslmode=disable",
+    AutoMigrate:      true,
+    ConcurrentWindow: 5 * time.Minute,
+    PenaltyDuration:  10 * time.Minute,
+    ShutdownTimeout:  30 * time.Second,
+}
+if err := hue.Run(ctx, cfg, logger); err != nil {
+    log.Fatal(err)
+}
 ```

@@ -104,6 +104,51 @@ full surface.
                   └────────────┘
 ```
 
+## CLI
+
+The binary is a tiny [Cobra](https://github.com/spf13/cobra) wrapper
+around the public package:
+
+```
+hue                # default action: run the server
+hue serve          # explicit
+hue version        # build info
+hue healthcheck    # used by Docker HEALTHCHECK
+hue --version, -v  # build info on the root command
+```
+
+## Embedding HUE as a library
+
+Everything the binary does is exposed via the root package. The whole
+runtime — DB open, engine wiring, single-port handler, graceful
+shutdown — is one function call:
+
+```go
+import (
+    "context"
+    "log/slog"
+    "os"
+
+    "github.com/hiddify/hue"
+)
+
+func main() {
+    cfg := &hue.Config{
+        Addr:        ":8443",
+        DatabaseURL: "postgres://hue:hue@localhost:5432/hue?sslmode=disable",
+        AutoMigrate: true,
+    }
+    logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+    if err := hue.Run(context.Background(), cfg, logger); err != nil {
+        panic(err)
+    }
+}
+```
+
+`hue.Version`, `hue.Commit`, and `hue.Date` are settable via `-ldflags`
+so embeddings can echo the same build info from their own
+`--version` output.
+
 ## Project layout
 
 ```
