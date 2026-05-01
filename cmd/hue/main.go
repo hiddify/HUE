@@ -37,6 +37,7 @@ import (
 	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/test/bufconn"
 
 	huev1 "github.com/hiddify/hue/gen/go/hue/v1"
@@ -159,6 +160,10 @@ func run() error {
 		),
 	)
 	bundle.Register(grpcSrv)
+	// Register the gRPC server reflection service so grpcurl + grpc-ui
+	// work without needing the .proto file. Safe to leave on in
+	// production: it only exposes the schema, not data.
+	reflection.Register(grpcSrv)
 
 	// --- In-process bufconn so the gateway hits the same gRPC stack ---
 	const bufSize = 1 << 20

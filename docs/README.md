@@ -4,6 +4,7 @@ Start here.
 
 ## For users of the API
 
+- **[How-to manual](manual.md)** — task-oriented walkthrough: bootstrap → tenant model → onboard nodes → provision users → report usage → daily ops. Start here if you've just deployed HUE.
 - **[API reference](api.md)** — services, RPCs, REST routes, examples.
 - **[Authentication](auth.md)** — how to mint and use an API key.
 

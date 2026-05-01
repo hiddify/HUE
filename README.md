@@ -133,6 +133,7 @@ HUE/
 
 ## Documentation
 
+- [How-to manual](docs/manual.md) — task-oriented walkthrough from bootstrap to daily ops
 - [Architecture](docs/architecture.md) — components, data flow, the single-port handler
 - [API reference](docs/api.md) — services, RPCs, REST routes, examples
 - [Configuration](docs/configuration.md) — every `HUE_*` env var
