@@ -1,0 +1,15 @@
+# CODEOWNERS for the HUE repo. Lines later in the file take precedence.
+#
+# A CODEOWNER review is required for changes under api/proto/ — the proto
+# file is the contract for both gRPC and HTTP APIs, so breaking changes
+# need explicit sign-off, not just a passing CI.
+
+* @hiddifydeveloper
+
+/api/proto/                @hiddifydeveloper
+/buf.yaml                  @hiddifydeveloper
+/buf.gen.yaml              @hiddifydeveloper
+
+/.github/                  @hiddifydeveloper
+/deployments/              @hiddifydeveloper
+/internal/ent/schema/      @hiddifydeveloper

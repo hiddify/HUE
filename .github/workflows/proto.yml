@@ -1,0 +1,51 @@
+name: Proto changes
+
+on:
+  pull_request:
+    paths:
+      - "api/proto/**"
+      - "buf.yaml"
+      - "buf.gen.yaml"
+      - "buf.lock"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  diff:
+    name: OpenAPI diff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.1"
+          cache: true
+      - uses: bufbuild/buf-action@v1
+        with:
+          setup_only: true
+      - name: Generate base + head OpenAPI
+        run: |
+          mkdir -p /tmp/oas
+          git checkout "${{ github.base_ref }}" -- api/proto buf.yaml buf.gen.yaml || true
+          buf generate || true
+          cp gen/openapi/hue.swagger.json /tmp/oas/base.json || echo "{}" > /tmp/oas/base.json
+          git checkout "${{ github.head_ref }}" -- api/proto buf.yaml buf.gen.yaml
+          buf generate
+          cp gen/openapi/hue.swagger.json /tmp/oas/head.json
+      - name: oasdiff
+        uses: oasdiff/oasdiff-action/diff@main
+        with:
+          base: /tmp/oas/base.json
+          revision: /tmp/oas/head.json
+          format: markdown
+          output-to-file: /tmp/oas/diff.md
+      - name: PR comment
+        if: hashFiles('/tmp/oas/diff.md') != ''
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          path: /tmp/oas/diff.md
+          header: openapi-diff

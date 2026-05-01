@@ -1,0 +1,21 @@
+# Optional: requires prometheus-operator. If you scrape via annotations
+# instead, this file can be deleted — annotations are already on the pods.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: hue
+  namespace: hue
+  labels:
+    app.kubernetes.io/name: hue
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hue
+  endpoints:
+    - port: https
+      scheme: https
+      path: /metrics
+      interval: 30s
+      tlsConfig:
+        insecureSkipVerify: true

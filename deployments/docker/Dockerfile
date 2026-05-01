@@ -1,44 +1,38 @@
-# Build stage
-FROM golang:1.22-alpine AS builder
+# syntax=docker/dockerfile:1.7
+#
+# Multi-stage Dockerfile for HUE. Final image is distroless/static:nonroot
+# (~25 MB), runs as UID 65532, no shell, no package manager.
 
-RUN apk add --no-cache git make protobuf
-
-WORKDIR /app
-
-# Copy go mod files
+ARG GO_VERSION=1.26
+FROM golang:${GO_VERSION}-alpine AS deps
+WORKDIR /src
+RUN apk add --no-cache git ca-certificates tzdata
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go mod download
 
-# Copy source code
+FROM deps AS build
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG BUILD_DATE=unknown
 COPY . .
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux \
+    go build -trimpath -buildvcs=false \
+      -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${BUILD_DATE}" \
+      -o /out/hue ./cmd/hue
 
-# Build the binary
-RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w" -o /hue ./cmd/hue
+FROM gcr.io/distroless/static-debian12:nonroot AS runtime
+COPY --from=build /out/hue /usr/local/bin/hue
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=build /usr/share/zoneinfo /usr/share/zoneinfo
+EXPOSE 8443
+USER nonroot:nonroot
 
-# Runtime stage
-FROM alpine:3.19
+# Self-healthcheck via the binary's "healthcheck" subcommand — no curl needed.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD ["/usr/local/bin/hue", "healthcheck"]
 
-RUN apk add --no-cache ca-certificates tzdata
-
-WORKDIR /app
-
-# Copy binary from builder
-COPY --from=builder /hue /app/hue
-
-# Create data directory
-RUN mkdir -p /data
-
-# Set environment defaults
-ENV HUE_DB_URL=sqlite:///data/hue.db
-ENV HUE_PORT=50051
-ENV HUE_LOG_LEVEL=info
-
-# Expose ports
-EXPOSE 50051 50052
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD wget -q --spider http://localhost:50052/health || exit 1
-
-# Run the binary
-ENTRYPOINT ["/app/hue"]
+ENTRYPOINT ["/usr/local/bin/hue"]

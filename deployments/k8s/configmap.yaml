@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hue-config
+  namespace: hue
+data:
+  HUE_ADDR: ":8443"
+  HUE_LOG_LEVEL: "info"
+  HUE_LOG_FORMAT: "json"
+  HUE_AUTO_MIGRATE: "false"   # production: run migrations as a separate Job
+  HUE_TLS_CERT: "/certs/tls.crt"
+  HUE_TLS_KEY: "/certs/tls.key"
+  HUE_MAXMIND_DB_PATH: "/geo/GeoLite2-City.mmdb"
+  HUE_CONCURRENT_WINDOW: "5m"
+  HUE_PENALTY_DURATION: "10m"
+  HUE_DB_MAX_OPEN_CONNS: "20"
+  HUE_DB_MAX_IDLE_CONNS: "10"
+  HUE_SHUTDOWN_TIMEOUT: "30s"

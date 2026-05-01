@@ -1,201 +1,150 @@
-# 🚀 Hiddify Usage Engine (HUE) - Go
+# HUE — Hiddify Usage Engine
 
-**A universal, protocol-agnostic Usage & Subscription Control Plane.**
+A protocol-agnostic Go control plane that VPN/proxy nodes (Xray, Singbox,
+WireGuard, OpenVPN, RADIUS, …) report usage to. HUE enforces quota,
+counts concurrent sessions, applies penalties, rolls usage up through a
+multi-level reseller hierarchy, and exposes the whole API surface as
+**gRPC + REST on a single port**.
 
-HUE is a high-performance, secure, and ultra-lightweight engine designed to manage user consumption across a vast array of protocols. It is engineered for extremely low I/O and CPU overhead, making it ideal for managing 1000+ users on standard hardware.
+The wire contract — types, RPCs, validation rules, and HTTP routes — is
+defined exactly once in [`api/proto/hue/v1/hue.proto`](api/proto/hue/v1/hue.proto).
+`buf generate` produces the gRPC server stubs, the gRPC-gateway HTTP
+router, and the OpenAPI spec from that single file. There is no
+hand-written REST dispatch.
 
----
+## What you get
 
-## ✨ Key Features
+- **One TLS port** serves browsers, gRPC clients, and gRPC-gateway-translated REST traffic. Auth + validation interceptors apply uniformly to both transports.
+- **PostgreSQL via [ent](https://entgo.io)** — schema-as-code, generated typed client, no reflection in the hot path. Engine-agnostic enough to run unit tests on SQLite in-memory.
+- **Per-actor API keys**, Argon2id-hashed at rest, lookup-prefix routed, constant-time verified. Three actor kinds: `manager`, `service`, `node`.
+- **Privacy by construction** — client IPs flow through geo + session counting and are dropped before any persistence or log write.
+- **Fine-grained per-user locking** with delete-on-forget cleanup so the legacy unbounded-growth bug can't come back.
+- **Multi-level manager hierarchy** with projected-usage checks before commit, so a parent's limit is never violated even with concurrent updates on siblings.
 
-- **🌐 Comprehensive Protocol Support**: 
-  - **VPN/Proxy**: Xray, Singbox, WireGuard, OpenVPN, IPSec, SSH.
-  - **Core Protocols**: Vless, Trojan, Shadowsocks, VMess.
-  - **Enterprise**: PPP, L2TP, and RADIUS (Mikrotik/NAS) support.
-- **⚡ Performance Optimized**: 
-  - **Buffered Writes**: Aggregates usage in-memory to minimize disk I/O.
-  - **Dual-DB Architecture**: Separate databases for Metadata and Historical Logs to maintain constant speed.
-- **📜 Event Sourcing Architecture**: Immutable event logs for perfect consistency and audit replay.
-- **🔒 Privacy First**: Zero Raw-IP retention. IPs are deleted immediately after session/geo processing.
-- **🛡️ Fine-Grained Locking**: High concurrency with locks isolated to specific users or services.
-
----
-
-## 🏗️ Architecture
-
-```mermaid
-graph TD
-    subgraph "Service Layers"
-        S1[Xray/Singbox/VPN]
-        S2["Mikrotik (RADIUS)"]
-        S3[WireGuard/VPN]
-    end
-    
-    subgraph "HUE Core"
-        direction TB
-        HC[In-Memory Engine]
-        EV[Event Store]
-        DBA[(User DB - Metadata)]
-        DBH[(History DB - Logs)]
-    end
-
-    S1 <-->|TLS/gRPC| HC
-    S2 <-->|RADIUS/UDP| HC
-    S3 <-->|TLS/gRPC| HC
-    HC --> EV
-    HC --- DBA
-    EV --- DBH
-```
-
----
-
-## 🚀 Quick Start
-
-### Prerequisites
-
-- Go 1.22+ (for building from source)
-- Protocol Buffers compiler (`protoc`) - optional, for regenerating proto files
-- SQLite 3
-
-### Build from Source
+## Quickstart
 
 ```bash
-# Clone the repository
-git clone https://github.com/hiddify/hue-go.git
-cd hue-go
+# Bring up Postgres + HUE with TLS
+mkdir -p deployments/docker/{secrets,certs,geo}
+echo "supersecret"   > deployments/docker/secrets/pg_password
+printf 'postgres://hue:supersecret@postgres:5432/hue?sslmode=disable' \
+  > deployments/docker/secrets/db_url
+echo "mgr_$(openssl rand -base64 18 | tr -d '/+=' | tr 'A-Z' 'a-z')" \
+  > deployments/docker/secrets/bootstrap_token
+# (drop a self-signed cert into deployments/docker/certs/tls.{crt,key})
 
-# Install dependencies
-go mod tidy
+docker compose -f deployments/docker/docker-compose.yml up -d
+TOKEN=$(cat deployments/docker/secrets/bootstrap_token)
 
-# Build in release mode
-make build
+# REST (via grpc-gateway)
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  https://localhost:8443/v1/users \
+  -H 'Content-Type: application/json' \
+  -d '{"user":{"info":{"groups":["test"]},"auth_method":{"username":"u1","password":"p1"}}}'
 
-# The binary will be at bin/hue
+# Native gRPC — same port, same handler
+grpcurl -insecure \
+  -H "authorization: Bearer $TOKEN" \
+  -d '{"page_size":10}' \
+  localhost:8443 hue.v1.AdminService/ListUsers
 ```
 
-### Using Docker
+Both calls hit the same Go function. See [docs/api.md](docs/api.md) for the
+full surface.
 
-```bash
-# Build the image
-docker build -t hue -f deployments/docker/Dockerfile .
-
-# Run with environment variables
-docker run -d \
-  -p 50051:50051 \
-  -p 50052:50052 \
-  -e HUE_AUTH_SECRET=your-secret-key \
-  -v hue-data:/data \
-  --name hue \
-  hue
-```
-
-Or use docker-compose:
-
-```bash
-# Run with docker-compose
-docker-compose -f deployments/docker/docker-compose.yml up -d
-```
-
-### Configuration
-
-HUE is configured entirely through environment variables. See `config.env.example` for all options.
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `HUE_DB_URL` | Database connection string | `sqlite://./hue.db` |
-| `HUE_PORT` | gRPC server port | `50051` |
-| `HUE_AUTH_SECRET` | Master authentication secret | Required |
-| `HUE_LOG_LEVEL` | Logging verbosity | `info` |
-| `HUE_DB_FLUSH_INTERVAL` | Batch write interval | `5m` |
-| `HUE_CONCURRENT_WINDOW` | Session counting window | `5m` |
-| `HUE_PENALTY_DURATION` | Penalty duration | `10m` |
-| `HUE_MAXMIND_DB_PATH` | Path to MaxMind GeoLite2 database | `""` |
-| `HUE_EVENT_STORE_TYPE` | Event storage type (`db`, `file`, `none`) | `db` |
-
----
-
-## 📡 API Reference
-
-### gRPC Services
-
-HUE exposes three gRPC services:
-
-1. **UsageService** (port 50051) - Usage reporting from nodes
-2. **AdminService** (port 50051) - User/package/node management
-3. **NodeService** (port 50051) - Node authentication and commands
-
-### HTTP REST API (port 50052)
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/health` | GET | Health check |
-| `/api/v1/users` | GET/POST | List/create users |
-| `/api/v1/users/{id}` | GET/PUT/DELETE | Get/update/delete user |
-| `/api/v1/packages` | POST | Create package |
-| `/api/v1/nodes` | GET/POST | List/create nodes |
-| `/api/v1/services` | POST | Create service |
-| `/api/v1/stats` | GET | Get statistics |
-
-All endpoints require `?secret=<HUE_AUTH_SECRET>` query parameter.
-
----
-
-## 🛠️ Scalability Model
-
-| Scale | Strategy | I/O Management |
-| :--- | :--- | :--- |
-| **Medium (Up to 1000+ Users)** | Multi-thread single instance + SQLite WAL | 5min Buffered Batch Flush |
-| **Large (10k+ Users)** | Multi-instance + TimescaleDB | Continuous Ingest |
-
----
-
-## 📁 Project Structure
+## Architecture in one diagram
 
 ```
-hue-go/
-├── cmd/hue/              # Main binary
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│ gRPC client  │     │ HTTP/REST    │     │  browser     │
+└──────┬───────┘     └──────┬───────┘     └──────┬───────┘
+       │ HTTP/2             │ HTTP/1.1 or 2      │ HTTP/1.1
+       │ application/grpc   │ application/json   │
+       └──────────┬─────────┴───────────┬────────┘
+                  │                     │
+              ┌───┴─────────────────────┴───┐
+              │  cmd/hue/main.go            │   one TLS port (h2c when no TLS)
+              │  ┌──────────────────────┐   │
+              │  │ content-type sniff   │   │
+              │  └──────┬──────┬────────┘   │
+              │         │      │            │
+              │   gRPC  │      │ gateway    │
+              │  server │      │ ServeMux   │
+              │         │      │            │
+              │         │   bufconn         │
+              │         │   (in-process)    │
+              │         ▼                   │
+              │  ┌──────────────────────┐   │
+              │  │ unary interceptors:  │   │
+              │  │  panic recovery      │   │
+              │  │  slog                 │   │
+              │  │  auth (Argon2id)      │   │
+              │  │  protovalidate (CEL) │   │
+              │  └──────┬───────────────┘   │
+              │         │                   │
+              │  ┌──────┴───────────────┐   │
+              │  │ internal/server/     │   │
+              │  │ thin proto↔ent shims │   │
+              │  └──────┬───────────────┘   │
+              │         │                   │
+              │  ┌──────┴───────────────┐   │
+              │  │ internal/service/    │   │
+              │  │  Engine, locks,      │   │
+              │  │  sessions, penalty,  │   │
+              │  │  manager hierarchy   │   │
+              │  └──────┬───────────────┘   │
+              │         │                   │
+              │  ┌──────┴────┐  ┌──────────┐│
+              │  │ ent client │  │ events  ││
+              │  └──────┬────┘  └──────────┘│
+              └─────────┼──────────────────┘
+                        │
+                  ┌─────┴──────┐
+                  │ PostgreSQL │
+                  └────────────┘
+```
+
+## Project layout
+
+```
+HUE/
+├── api/proto/hue/v1/hue.proto   # SINGLE SOURCE OF TRUTH for the API
+├── buf.yaml, buf.gen.yaml       # Codegen pipeline
+├── gen/                         # Generated (gitignored): pb, grpc, gw, openapi
+├── cmd/hue/main.go              # Entry point — single-port handler
 ├── internal/
-│   ├── api/
-│   │   ├── grpc/         # gRPC services
-│   │   └── http/         # REST API
-│   ├── auth/             # Authentication & locking
-│   ├── config/           # Configuration
-│   ├── domain/           # Domain models
-│   ├── engine/           # Core engine (quota, session, penalty, geo)
-│   ├── eventstore/       # Event sourcing
-│   └── storage/
-│       ├── cache/        # In-memory cache
-│       └── sqlite/       # SQLite database layer
-├── pkg/proto/            # Protocol buffer definitions
+│   ├── ent/                     # Generated client; schemas in ./schema
+│   ├── server/                  # Proto↔ent shims, interceptors
+│   ├── service/                 # Business logic (engine, locks, hierarchy)
+│   ├── auth/                    # API keys + interceptor + bootstrap
+│   ├── database/                # Postgres + ent wiring
+│   ├── eventstore/              # Audit events + pub/sub fan-out
+│   ├── geo/                     # MaxMind lookup with zero-IP retention
+│   └── config/                  # envconfig-driven config
 ├── deployments/
-│   ├── docker/           # Docker files
-│   └── k8s/              # Kubernetes manifests
-├── go.mod
-├── Makefile
-└── README.md
+│   ├── docker/                  # Multi-stage Dockerfile + compose stacks
+│   └── k8s/                     # Manifests: deployment, service, hpa, …
+├── .github/workflows/           # CI, release, proto-diff, nightly, codeql
+├── docs/                        # Documentation index (start at docs/README.md)
+├── PRD.md                       # Product requirements
+├── REVIEW.md                    # Audit of the previous (v1) codebase
+└── Makefile                     # `make help` lists everything
 ```
 
----
+## Documentation
 
-## 🗺️ Roadmap
+- [Architecture](docs/architecture.md) — components, data flow, the single-port handler
+- [API reference](docs/api.md) — services, RPCs, REST routes, examples
+- [Configuration](docs/configuration.md) — every `HUE_*` env var
+- [Authentication](docs/auth.md) — API keys, bootstrap, revocation
+- [Development](docs/development.md) — local setup, regenerating proto + ent
+- [Deployment](docs/deployment.md) — Docker compose and Kubernetes
+- [Operations](docs/operations.md) — health, observability, shutdown, troubleshooting
 
-- [x] Core gRPC Ingestor & Quota Engine
-- [x] SQLite database with WAL mode
-- [x] Buffered write system
-- [x] Concurrent session enforcement
-- [x] Event sourcing
-- [x] HTTP REST API
-- [ ] Xray, Singbox, & WireGuard Adapters
-- [ ] Advanced Traffic Tagging
-- [ ] **RADIUS / NAS Support (Final Phase Priority)**
+The product spec lives in [PRD.md](PRD.md). The audit of the previous
+implementation, including the regression bugs that the rewrite fixes,
+lives in [REVIEW.md](REVIEW.md).
 
----
+## License
 
-## 📄 License
-
-HUE is released under the [MIT License](LICENSE). 
-
----
-<p align="center">
-  Made with ❤️ by the Hiddify Team
-</p>
+[MIT](LICENSE).

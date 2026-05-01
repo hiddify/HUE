@@ -1,34 +1,85 @@
-version: '3.8'
+# Production-shape compose stack: Postgres + HUE behind a single port.
+# Adminer is gated behind the `dev` profile — `docker compose --profile dev up`.
+#
+# Secrets are file-mounted from ./secrets (gitignored). For a fresh checkout:
+#   mkdir -p secrets certs geo
+#   echo "supersecret"   > secrets/pg_password
+#   printf 'postgres://hue:supersecret@postgres:5432/hue?sslmode=disable' > secrets/db_url
+#   echo "mgr_$(openssl rand -base64 18 | tr -d '/+=' | tr 'A-Z' 'a-z')" > secrets/bootstrap_token
+
+name: hue
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hue
+      POSTGRES_PASSWORD_FILE: /run/secrets/pg_password
+      POSTGRES_DB: hue
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    secrets: [pg_password]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hue -d hue"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 512M }
+
   hue:
     build:
       context: ../..
       dockerfile: deployments/docker/Dockerfile
-    container_name: hue
+      args:
+        VERSION: ${VERSION:-dev}
+        COMMIT: ${COMMIT:-local}
+        BUILD_DATE: ${BUILD_DATE:-unknown}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      HUE_ADDR: ":8443"
+      HUE_DB_URL_FILE: /run/secrets/db_url
+      HUE_LOG_LEVEL: ${HUE_LOG_LEVEL:-info}
+      HUE_LOG_FORMAT: ${HUE_LOG_FORMAT:-json}
+      HUE_AUTO_MIGRATE: "true"
+      HUE_BOOTSTRAP_TOKEN_FILE: /run/secrets/bootstrap_token
+      HUE_TLS_CERT: /certs/tls.crt
+      HUE_TLS_KEY: /certs/tls.key
+      HUE_MAXMIND_DB_PATH: /geo/GeoLite2-City.mmdb
+    ports:
+      - "${HUE_PORT:-8443}:8443"
+    volumes:
+      - ./certs:/certs:ro
+      - ./geo:/geo:ro
+    secrets: [db_url, bootstrap_token]
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/hue", "healthcheck"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+    deploy:
+      resources:
+        limits: { cpus: "2.0", memory: 1G }
+
+  adminer:
+    profiles: ["dev"]
+    image: adminer:5
     restart: unless-stopped
     ports:
-      - "50051:50051"  # gRPC
-      - "50052:50052"  # HTTP REST API
-    environment:
-      - HUE_DB_URL=sqlite:///data/hue.db
-      - HUE_PORT=50051
-      - HUE_LOG_LEVEL=info
-      - HUE_AUTH_SECRET=${HUE_AUTH_SECRET:-change-me-in-production}
-      - HUE_DB_FLUSH_INTERVAL=5m
-      - HUE_CONCURRENT_WINDOW=5m
-      - HUE_PENALTY_DURATION=10m
-      - HUE_EVENT_STORE_TYPE=db
-    volumes:
-      - hue-data:/data
-      - ./maxmind:/data/maxmind:ro  # Optional: Mount MaxMind GeoIP database
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:50052/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
+      - "8081:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+secrets:
+  pg_password:     { file: ./secrets/pg_password }
+  db_url:          { file: ./secrets/db_url }
+  bootstrap_token: { file: ./secrets/bootstrap_token }
 
 volumes:
-  hue-data:
-    driver: local
+  pgdata:

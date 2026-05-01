@@ -1,0 +1,866 @@
+// hue.proto — Hiddify Usage Engine v1
+//
+// SINGLE SOURCE OF TRUTH for the entire HUE API surface. Every RPC carries a
+// `google.api.http` annotation so `protoc-gen-grpc-gateway` produces the REST
+// router automatically. Validation rules are expressed inline via
+// `buf.validate.field` so both gRPC and gateway paths enforce the same
+// constraints with no handwritten guards.
+//
+// Conventions:
+//   * Resource collections live under /v1/<plural>.
+//   * Custom verbs use the suffix `:verb` per Google AIP-136.
+//   * Updates use HTTP PATCH + `update_mask`; full-replace PUT is not used.
+//   * `id` fields are server-generated UUIDs unless explicitly noted.
+//   * Times are RFC3339 strings over JSON, google.protobuf.Timestamp on the wire.
+
+syntax = "proto3";
+
+package hue.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/hiddify/hue/gen/go/hue/v1;huev1";
+
+// =============================================================================
+// Enums
+// =============================================================================
+
+enum UserStatus {
+  USER_STATUS_UNSPECIFIED = 0;
+  USER_STATUS_ACTIVE = 1;
+  USER_STATUS_SUSPENDED = 2;
+  USER_STATUS_EXPIRED = 3;
+  USER_STATUS_QUOTA_USED = 4;
+  USER_STATUS_PENALTY = 5;
+  USER_STATUS_INACTIVE = 6;
+}
+
+enum UsagePlanStatus {
+  USAGE_PLAN_STATUS_UNSPECIFIED = 0;
+  USAGE_PLAN_STATUS_ACTIVE = 1;
+  USAGE_PLAN_STATUS_EXPIRED = 2;
+  USAGE_PLAN_STATUS_QUOTA_USED = 3;
+  USAGE_PLAN_STATUS_SUSPENDED = 4;
+  USAGE_PLAN_STATUS_SESSION_REACHED = 5;
+  USAGE_PLAN_STATUS_PENALTY = 6;
+  USAGE_PLAN_STATUS_INACTIVE = 7;
+}
+
+enum ManagerStatus {
+  MANAGER_STATUS_UNSPECIFIED = 0;
+  MANAGER_STATUS_ACTIVE = 1;
+  MANAGER_STATUS_INACTIVE = 2;
+}
+
+enum NodeStatus {
+  NODE_STATUS_UNSPECIFIED = 0;
+  NODE_STATUS_ACTIVE = 1;
+  NODE_STATUS_DISABLED = 2;
+}
+
+enum ResetMode {
+  RESET_MODE_UNSPECIFIED = 0;
+  RESET_MODE_NO_RESET = 1;
+  RESET_MODE_HOURLY = 2;
+  RESET_MODE_DAILY = 3;
+  RESET_MODE_WEEKLY = 4;
+  RESET_MODE_MONTHLY = 5;
+  RESET_MODE_YEARLY = 6;
+}
+
+enum EventType {
+  EVENT_TYPE_UNSPECIFIED = 0;
+  EVENT_TYPE_USER_CONNECTED = 1;
+  EVENT_TYPE_USER_DISCONNECTED = 2;
+  EVENT_TYPE_USAGE_RECORDED = 3;
+  EVENT_TYPE_USAGE_PLAN_EXPIRED = 4;
+  EVENT_TYPE_USAGE_PLAN_QUOTA_USED = 5;
+  EVENT_TYPE_NODE_RESET = 6;
+  EVENT_TYPE_MANAGER_EXPIRED = 7;
+  EVENT_TYPE_PENALTY_APPLIED = 8;
+  EVENT_TYPE_PENALTY_EXPIRED = 9;
+  EVENT_TYPE_USER_SUSPENDED = 10;
+  EVENT_TYPE_USER_ACTIVATED = 11;
+  EVENT_TYPE_MANAGER_LIMIT_REACHED = 12;
+  EVENT_TYPE_USAGE_PLAN_STARTED = 13;
+  EVENT_TYPE_MANAGER_PLAN_STARTED = 14;
+  EVENT_TYPE_SERVICE_KEY_SHARED = 15;
+}
+
+enum AuthMethod {
+  AUTH_METHOD_UNSPECIFIED = 0;
+  AUTH_METHOD_UUID = 1;
+  AUTH_METHOD_PASSWORD = 2;
+  AUTH_METHOD_PUBLIC_KEY = 3;
+  AUTH_METHOD_CERTIFICATE = 4;
+}
+
+enum Protocol {
+  PROTOCOL_UNSPECIFIED = 0;
+  PROTOCOL_VLESS = 1;
+  PROTOCOL_VMESS = 2;
+  PROTOCOL_TROJAN = 3;
+  PROTOCOL_SHADOWSOCKS = 4;
+  PROTOCOL_WIREGUARD = 5;
+  PROTOCOL_OPENVPN = 6;
+  PROTOCOL_IPSEC = 7;
+  PROTOCOL_L2TP = 8;
+  PROTOCOL_PPTP = 9;
+  PROTOCOL_PPP = 10;
+  PROTOCOL_SSTP = 11;
+  PROTOCOL_SSH = 12;
+  PROTOCOL_RADIUS = 13;
+  PROTOCOL_XRAY = 14;
+  PROTOCOL_SINGBOX = 15;
+}
+
+enum ApiKeyKind {
+  API_KEY_KIND_UNSPECIFIED = 0;
+  API_KEY_KIND_MANAGER = 1;
+  API_KEY_KIND_SERVICE = 2;
+  API_KEY_KIND_NODE = 3;
+}
+
+enum HealthStatus {
+  HEALTH_STATUS_UNSPECIFIED = 0;
+  HEALTH_STATUS_SERVING = 1;
+  HEALTH_STATUS_NOT_SERVING = 2;
+}
+
+// =============================================================================
+// Common messages
+// =============================================================================
+
+message TrafficStats {
+  int64 total_bytes = 1;
+  int64 upload_bytes = 2;
+  int64 download_bytes = 3;
+  int64 sessions = 4;
+  int64 online_users = 5;
+  int64 active_users = 6;
+}
+
+message Geo {
+  string country = 1;
+  string city = 2;
+  string isp = 3;
+  uint32 asn = 4;
+}
+
+message ResetPolicy {
+  ResetMode mode = 1;
+  google.protobuf.Timestamp anchor_time = 2; // Day-of-month / hour-of-day boundary; server applies based on mode.
+}
+
+message Lifecycle {
+  google.protobuf.Timestamp created_at = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  google.protobuf.Timestamp updated_at = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// =============================================================================
+// User
+// =============================================================================
+
+message UserInfo {
+  string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  repeated string groups = 2 [(buf.validate.field).repeated = {
+    max_items: 64
+    items: {
+      string: {max_len: 64}
+    }
+  }];
+  UserStatus status = 3;
+  string manager_id = 4 [(buf.validate.field).string.max_len = 64];
+  map<string, google.protobuf.Value> metadata = 5;
+  Lifecycle lifecycle = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+message Certificate {
+  string name = 1 [(buf.validate.field).string.max_len = 128];
+  string private_key_pem = 2 [(buf.validate.field).string.max_len = 16384];
+  string public_key_pem = 3 [(buf.validate.field).string.max_len = 16384];
+  string certificate_pem = 4 [(buf.validate.field).string.max_len = 16384];
+}
+
+message UserAuthMethod {
+  string uuid = 1 [(buf.validate.field).string.max_len = 64];
+  string username = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 64
+    pattern: "^[a-zA-Z0-9._@-]+$"
+  }];
+  string password = 3 [(buf.validate.field).string.max_len = 256];
+  repeated Certificate certificates = 4 [(buf.validate.field).repeated.max_items = 8];
+  repeated string allowed_devices = 5 [(buf.validate.field).repeated = {
+    max_items: 32
+    items: {
+      string: {max_len: 128}
+    }
+  }];
+  map<string, google.protobuf.Value> custom = 6;
+}
+
+message User {
+  UserInfo info = 1;
+  UserAuthMethod auth_method = 2;
+  UsagePlan usage_plan = 3;
+}
+
+// =============================================================================
+// UsagePlan
+// =============================================================================
+
+message UsagePlan {
+  string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string user_id = 2 [(buf.validate.field).string.max_len = 64];
+  TrafficStats limit = 3;
+  TrafficStats current = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+  UsagePlanStatus status = 5;
+  ResetPolicy reset_policy = 6;
+  google.protobuf.Timestamp start_at = 7;
+  google.protobuf.Duration duration = 8;
+  int32 max_concurrent = 9 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 1000
+  }];
+  google.protobuf.Timestamp last_connection_at = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+  google.protobuf.Timestamp expires_at = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
+  Lifecycle lifecycle = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// =============================================================================
+// Node
+// =============================================================================
+
+message Node {
+  string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string name = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+  }];
+  repeated string ips = 3 [(buf.validate.field).repeated = {
+    max_items: 32
+    items: {
+      string: {max_len: 64}
+    }
+  }];
+  repeated string allowed_cidrs = 4 [(buf.validate.field).repeated = {
+    max_items: 32
+    items: {
+      string: {max_len: 64}
+    }
+  }];
+  double traffic_multiplier = 5 [(buf.validate.field).double = {
+    gte: 0
+    lte: 1000
+  }];
+  ResetPolicy reset_policy = 6;
+  TrafficStats current = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+  Geo geo = 8;
+  NodeStatus status = 9;
+  Lifecycle lifecycle = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// =============================================================================
+// Service
+// =============================================================================
+
+message Service {
+  string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string node_id = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 64
+  }];
+  string name = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+  }];
+  Protocol protocol = 4;
+  repeated AuthMethod allowed_auth_methods = 5 [(buf.validate.field).repeated.max_items = 8];
+  string callback_url = 6 [(buf.validate.field).string.max_len = 512];
+  TrafficStats current = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+  Lifecycle lifecycle = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// =============================================================================
+// Manager + ManagerPlan
+// =============================================================================
+
+message Manager {
+  string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string name = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+  }];
+  string parent_id = 3 [(buf.validate.field).string.max_len = 64];
+  ManagerStatus status = 4;
+  map<string, google.protobuf.Value> metadata = 5;
+  ManagerPlan plan = 6;
+  Lifecycle lifecycle = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+message ManagerPlan {
+  string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string manager_id = 2 [(buf.validate.field).string.max_len = 64];
+  TrafficStats limit = 3;
+  TrafficStats current = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+  int32 max_sessions = 5 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 1000000
+  }];
+  int32 max_online_users = 6 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 1000000
+  }];
+  int32 max_active_users = 7 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 1000000
+  }];
+  ResetPolicy reset_policy = 8;
+  google.protobuf.Timestamp start_at = 9;
+  google.protobuf.Duration duration = 10;
+  google.protobuf.Timestamp expires_at = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
+  Lifecycle lifecycle = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// =============================================================================
+// Event
+// =============================================================================
+
+message Event {
+  string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  EventType type = 2;
+  string user_id = 3;
+  string plan_id = 4;
+  string node_id = 5;
+  string service_id = 6;
+  string manager_id = 7;
+  repeated string tags = 8;
+  map<string, google.protobuf.Value> metadata = 9;
+  google.protobuf.Timestamp timestamp = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// =============================================================================
+// Usage report
+// =============================================================================
+
+message UsageReport {
+  string user_id = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 64
+  }];
+  string node_id = 2 [(buf.validate.field).string.max_len = 64];
+  string service_id = 3 [(buf.validate.field).string.max_len = 64];
+  int64 upload = 4 [(buf.validate.field).int64.gte = 0];
+  int64 download = 5 [(buf.validate.field).int64.gte = 0];
+  string session_id = 6 [(buf.validate.field).string.max_len = 128];
+  string client_ip = 7 [(buf.validate.field).string.max_len = 64]; // discarded after geo+session
+  repeated string tags = 8 [(buf.validate.field).repeated = {
+    max_items: 16
+    items: {
+      string: {max_len: 64}
+    }
+  }];
+  google.protobuf.Timestamp timestamp = 9;
+}
+
+message UsageDecision {
+  bool accepted = 1;
+  bool quota_exceeded = 2;
+  bool session_limit_hit = 3;
+  bool should_disconnect = 4;
+  string reason = 5;
+  google.protobuf.Timestamp penalty_until = 6;
+}
+
+message UserSnapshot {
+  string user_id = 1;
+  UserAuthMethod auth_method = 2;
+  UsagePlanStatus usage_plan_status = 3;
+}
+
+// =============================================================================
+// API Keys (auth model)
+// =============================================================================
+
+message ApiKey {
+  string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  ApiKeyKind kind = 2;
+  string owner_id = 3 [(buf.validate.field).string.max_len = 64]; // manager / service / node id
+  string name = 4 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+  }];
+  string prefix = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+  google.protobuf.Timestamp last_used_at = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+  google.protobuf.Timestamp revoked_at = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+  Lifecycle lifecycle = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// =============================================================================
+// Health
+// =============================================================================
+
+message HealthCheckRequest {
+  string service = 1; // optional service name; empty = overall
+}
+message HealthCheckResponse {
+  HealthStatus status = 1;
+}
+
+// =============================================================================
+// Request / response messages — Admin
+// =============================================================================
+
+message CreateUserRequest {
+  User user = 1 [(google.api.field_behavior) = REQUIRED];
+}
+message GetUserRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  bool include_auth_method = 2;
+}
+message UpdateUserRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  User user = 2 [(google.api.field_behavior) = REQUIRED];
+  google.protobuf.FieldMask update_mask = 3;
+}
+message ListUsersRequest {
+  UserStatus status = 1;
+  string group = 2;
+  string manager_id = 3;
+  string search = 4;
+  int32 page_size = 5 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 500
+  }];
+  string page_token = 6;
+}
+message ListUsersResponse {
+  repeated User users = 1;
+  string next_page_token = 2;
+  int32 total = 3;
+}
+message DeleteUserRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+message ResetUserUsageRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message GetUsagePlanRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+message ListUsagePlansRequest {
+  string user_id = 1;
+  UsagePlanStatus status = 2;
+  int32 page_size = 3 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 500
+  }];
+  string page_token = 4;
+}
+message ListUsagePlansResponse {
+  repeated UsagePlan plans = 1;
+  string next_page_token = 2;
+}
+message GetActiveUsagePlanRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message CreateNodeRequest {
+  Node node = 1 [(google.api.field_behavior) = REQUIRED];
+}
+message GetNodeRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+message UpdateNodeRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  Node node = 2 [(google.api.field_behavior) = REQUIRED];
+  google.protobuf.FieldMask update_mask = 3;
+}
+message ListNodesRequest {
+  NodeStatus status = 1;
+  int32 page_size = 2 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 500
+  }];
+  string page_token = 3;
+}
+message ListNodesResponse {
+  repeated Node nodes = 1;
+  string next_page_token = 2;
+}
+message DeleteNodeRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+message ResetNodeUsageRequest {
+  string node_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message CreateServiceRequest {
+  Service service = 1 [(google.api.field_behavior) = REQUIRED];
+}
+message CreateServiceResponse {
+  Service service = 1;
+  string api_key = 2;
+} // plaintext key returned ONCE on create
+message GetServiceRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+message UpdateServiceRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  Service service = 2 [(google.api.field_behavior) = REQUIRED];
+  google.protobuf.FieldMask update_mask = 3;
+}
+message ListServicesRequest {
+  string node_id = 1;
+  Protocol protocol = 2;
+  int32 page_size = 3 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 500
+  }];
+  string page_token = 4;
+}
+message ListServicesResponse {
+  repeated Service services = 1;
+  string next_page_token = 2;
+}
+message DeleteServiceRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message CreateManagerRequest {
+  Manager manager = 1 [(google.api.field_behavior) = REQUIRED];
+}
+message GetManagerRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+message UpdateManagerRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  Manager manager = 2 [(google.api.field_behavior) = REQUIRED];
+  google.protobuf.FieldMask update_mask = 3;
+}
+message ListManagersRequest {
+  string parent_id = 1;
+  ManagerStatus status = 2;
+  int32 page_size = 3 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 500
+  }];
+  string page_token = 4;
+}
+message ListManagersResponse {
+  repeated Manager managers = 1;
+  string next_page_token = 2;
+}
+message DeleteManagerRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+message ResetManagerUsageRequest {
+  string manager_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message ListEventsRequest {
+  EventType type = 1;
+  string user_id = 2;
+  string manager_id = 3;
+  google.protobuf.Timestamp since = 4;
+  google.protobuf.Timestamp until = 5;
+  int32 page_size = 6 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 500
+  }];
+  string page_token = 7;
+}
+message ListEventsResponse {
+  repeated Event events = 1;
+  string next_page_token = 2;
+}
+message StreamEventsRequest {
+  repeated EventType types = 1;
+  string user_id = 2;
+  string manager_id = 3;
+  int32 buffer_size = 4 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 10000
+  }];
+}
+
+// API Keys
+message CreateApiKeyRequest {
+  ApiKey api_key = 1 [(google.api.field_behavior) = REQUIRED];
+}
+message CreateApiKeyResponse {
+  ApiKey api_key = 1;
+  string token = 2;
+} // plaintext returned ONCE
+message ListApiKeysRequest {
+  ApiKeyKind kind = 1;
+  string owner_id = 2;
+  int32 page_size = 3 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 500
+  }];
+  string page_token = 4;
+}
+message ListApiKeysResponse {
+  repeated ApiKey api_keys = 1;
+  string next_page_token = 2;
+}
+message RevokeApiKeyRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// =============================================================================
+// Request / response messages — Usage
+// =============================================================================
+
+message ReportUsageRequest {
+  UsageReport report = 1 [(google.api.field_behavior) = REQUIRED];
+}
+message ReportUsageResponse {
+  UsageDecision decision = 1;
+}
+
+message BatchReportUsageRequest {
+  repeated UsageReport reports = 1 [(buf.validate.field).repeated = {
+    min_items: 1
+    max_items: 1000
+  }];
+}
+message BatchReportUsageResponse {
+  repeated UsageDecision decisions = 1;
+  int32 accepted = 2;
+  int32 rejected = 3;
+}
+
+message SyncUsersRequest {
+  string node_id = 1;
+}
+message SyncUsersResponse {
+  repeated UserSnapshot snapshots = 1;
+}
+
+// =============================================================================
+// Request / response messages — Node
+// =============================================================================
+
+message AuthenticateNodeRequest {
+  string token = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 256
+  }];
+}
+message AuthenticateNodeResponse {
+  string node_id = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+message HeartbeatRequest {
+  string node_id = 1 [(buf.validate.field).string.min_len = 1];
+  TrafficStats snapshot = 2;
+  google.protobuf.Timestamp timestamp = 3;
+}
+message HeartbeatResponse {
+  repeated string disconnect_user_ids = 1; // batched disconnect commands
+}
+
+// =============================================================================
+// Services
+// =============================================================================
+
+// AdminService — control plane: managers and humans manage tenants, plans, nodes.
+service AdminService {
+  // Users
+  rpc CreateUser(CreateUserRequest) returns (User) {
+    option (google.api.http) = {
+      post: "/v1/users"
+      body: "user"
+    };
+  }
+  rpc GetUser(GetUserRequest) returns (User) {
+    option (google.api.http) = {get: "/v1/users/{id}"};
+  }
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse) {
+    option (google.api.http) = {get: "/v1/users"};
+  }
+  rpc UpdateUser(UpdateUserRequest) returns (User) {
+    option (google.api.http) = {
+      patch: "/v1/users/{id}"
+      body: "user"
+    };
+  }
+  rpc DeleteUser(DeleteUserRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/v1/users/{id}"};
+  }
+  rpc ResetUserUsage(ResetUserUsageRequest) returns (UsagePlan) {
+    option (google.api.http) = {
+      post: "/v1/users/{user_id}:resetUsage"
+      body: "*"
+    };
+  }
+
+  // Usage plans
+  rpc GetUsagePlan(GetUsagePlanRequest) returns (UsagePlan) {
+    option (google.api.http) = {get: "/v1/usagePlans/{id}"};
+  }
+  rpc ListUsagePlans(ListUsagePlansRequest) returns (ListUsagePlansResponse) {
+    option (google.api.http) = {get: "/v1/usagePlans"};
+  }
+  rpc GetActiveUsagePlan(GetActiveUsagePlanRequest) returns (UsagePlan) {
+    option (google.api.http) = {get: "/v1/users/{user_id}/activeUsagePlan"};
+  }
+
+  // Nodes
+  rpc CreateNode(CreateNodeRequest) returns (Node) {
+    option (google.api.http) = {
+      post: "/v1/nodes"
+      body: "node"
+    };
+  }
+  rpc GetNode(GetNodeRequest) returns (Node) {
+    option (google.api.http) = {get: "/v1/nodes/{id}"};
+  }
+  rpc ListNodes(ListNodesRequest) returns (ListNodesResponse) {
+    option (google.api.http) = {get: "/v1/nodes"};
+  }
+  rpc UpdateNode(UpdateNodeRequest) returns (Node) {
+    option (google.api.http) = {
+      patch: "/v1/nodes/{id}"
+      body: "node"
+    };
+  }
+  rpc DeleteNode(DeleteNodeRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/v1/nodes/{id}"};
+  }
+  rpc ResetNodeUsage(ResetNodeUsageRequest) returns (Node) {
+    option (google.api.http) = {
+      post: "/v1/nodes/{node_id}:resetUsage"
+      body: "*"
+    };
+  }
+
+  // Services
+  rpc CreateService(CreateServiceRequest) returns (CreateServiceResponse) {
+    option (google.api.http) = {
+      post: "/v1/services"
+      body: "service"
+    };
+  }
+  rpc GetService(GetServiceRequest) returns (Service) {
+    option (google.api.http) = {get: "/v1/services/{id}"};
+  }
+  rpc ListServices(ListServicesRequest) returns (ListServicesResponse) {
+    option (google.api.http) = {get: "/v1/services"};
+  }
+  rpc UpdateService(UpdateServiceRequest) returns (Service) {
+    option (google.api.http) = {
+      patch: "/v1/services/{id}"
+      body: "service"
+    };
+  }
+  rpc DeleteService(DeleteServiceRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/v1/services/{id}"};
+  }
+
+  // Managers
+  rpc CreateManager(CreateManagerRequest) returns (Manager) {
+    option (google.api.http) = {
+      post: "/v1/managers"
+      body: "manager"
+    };
+  }
+  rpc GetManager(GetManagerRequest) returns (Manager) {
+    option (google.api.http) = {get: "/v1/managers/{id}"};
+  }
+  rpc ListManagers(ListManagersRequest) returns (ListManagersResponse) {
+    option (google.api.http) = {get: "/v1/managers"};
+  }
+  rpc UpdateManager(UpdateManagerRequest) returns (Manager) {
+    option (google.api.http) = {
+      patch: "/v1/managers/{id}"
+      body: "manager"
+    };
+  }
+  rpc DeleteManager(DeleteManagerRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/v1/managers/{id}"};
+  }
+  rpc ResetManagerUsage(ResetManagerUsageRequest) returns (Manager) {
+    option (google.api.http) = {
+      post: "/v1/managers/{manager_id}:resetUsage"
+      body: "*"
+    };
+  }
+
+  // Events
+  rpc ListEvents(ListEventsRequest) returns (ListEventsResponse) {
+    option (google.api.http) = {get: "/v1/events"};
+  }
+  rpc StreamEvents(StreamEventsRequest) returns (stream Event) {
+    option (google.api.http) = {get: "/v1/events:stream"};
+  }
+
+  // API keys
+  rpc CreateApiKey(CreateApiKeyRequest) returns (CreateApiKeyResponse) {
+    option (google.api.http) = {
+      post: "/v1/apiKeys"
+      body: "api_key"
+    };
+  }
+  rpc ListApiKeys(ListApiKeysRequest) returns (ListApiKeysResponse) {
+    option (google.api.http) = {get: "/v1/apiKeys"};
+  }
+  rpc RevokeApiKey(RevokeApiKeyRequest) returns (ApiKey) {
+    option (google.api.http) = {
+      post: "/v1/apiKeys/{id}:revoke"
+      body: "*"
+    };
+  }
+
+  // Health (mirrors grpc.health.v1; HTTP-mapped at the conventional path)
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse) {
+    option (google.api.http) = {get: "/healthz"};
+  }
+}
+
+// UsageService — data plane: nodes + services push usage reports here.
+service UsageService {
+  rpc ReportUsage(ReportUsageRequest) returns (ReportUsageResponse) {
+    option (google.api.http) = {
+      post: "/v1/usage:report"
+      body: "report"
+    };
+  }
+  rpc BatchReportUsage(BatchReportUsageRequest) returns (BatchReportUsageResponse) {
+    option (google.api.http) = {
+      post: "/v1/usage:batchReport"
+      body: "*"
+    };
+  }
+  rpc SyncUsers(SyncUsersRequest) returns (SyncUsersResponse) {
+    option (google.api.http) = {get: "/v1/users:sync"};
+  }
+}
+
+// NodeService — node bootstrap + heartbeat with disconnect commands.
+service NodeService {
+  rpc AuthenticateNode(AuthenticateNodeRequest) returns (AuthenticateNodeResponse) {
+    option (google.api.http) = {
+      post: "/v1/nodes:authenticate"
+      body: "*"
+    };
+  }
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse) {
+    option (google.api.http) = {
+      post: "/v1/nodes:heartbeat"
+      body: "*"
+    };
+  }
+}

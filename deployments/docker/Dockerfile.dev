@@ -1,0 +1,10 @@
+# Hot-reload dev image. Mount the repo at /src and run `docker compose
+# --profile dev up` — air watches Go + proto changes, rebuilds, restarts.
+ARG GO_VERSION=1.26
+FROM golang:${GO_VERSION}-alpine
+RUN apk add --no-cache git make protoc
+RUN go install github.com/air-verse/air@latest \
+ && go install github.com/bufbuild/buf/cmd/buf@latest
+WORKDIR /src
+EXPOSE 8443
+CMD ["air", "-c", "deployments/docker/.air.toml"]

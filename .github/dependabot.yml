@@ -1,0 +1,37 @@
+version: 2
+
+updates:
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    open-pull-requests-limit: 5
+    groups:
+      grpc-and-proto:
+        patterns:
+          - "google.golang.org/grpc*"
+          - "google.golang.org/protobuf"
+          - "github.com/grpc-ecosystem/*"
+          - "buf.build/*"
+      ent:
+        patterns:
+          - "entgo.io/*"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /deployments/docker
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"

@@ -1,0 +1,19 @@
+version: v2
+modules:
+  - path: api/proto
+    name: buf.build/hiddify/hue
+deps:
+  - buf.build/googleapis/googleapis
+  - buf.build/bufbuild/protovalidate
+lint:
+  use:
+    - STANDARD
+  except:
+    # Google AIP-131 prefers per-RPC response wrappers (GetUserResponse { User user = 1 }).
+    # We deliberately return the resource directly when no extra fields are needed —
+    # less noise, identical wire format. These two lint rules enforce the wrapper style.
+    - RPC_RESPONSE_STANDARD_NAME
+    - RPC_REQUEST_RESPONSE_UNIQUE
+breaking:
+  use:
+    - FILE
