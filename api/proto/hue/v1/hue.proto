@@ -881,19 +881,47 @@ message SyncConfigRequest {
   string service_id = 1 [(buf.validate.field).string.min_len = 1];
   // Etag returned by the previous SyncConfig (or empty on first call).
   // When this matches the current server-side etag, the response is
-  // marked unchanged and `config` may be empty.
+  // marked unchanged and template/vars/users may be empty.
   string current_etag = 2 [(buf.validate.field).string.max_len = 128];
 }
 
+message ConfigTemplate {
+  // The literal config in its native format. The adapter's renderer
+  // performs substitution using `vars` and `users` from the response.
+  // Format is open-ended: xray-core inbound JSON, wireguard `wg-quick`
+  // ini, OpenVPN config — whatever the protocol needs.
+  string body = 1;
+  // Hint for the renderer. Recognized values today: "xray-json",
+  // "wireguard-ini", "openvpn-conf". Adapters reject formats they
+  // don't understand.
+  string format = 2;
+}
+
+message ConfigUser {
+  string id = 1;           // HUE user UUID — used as vless UUID by default
+  string username = 2;
+  // Optional protocol-relevant fields. Empty when not set on the User
+  // row; the template chooses which to use.
+  string public_key = 3;
+  repeated string groups = 4;
+}
+
 message SyncConfigResponse {
-  // Abstract key-value pairs. Values are intentionally untyped strings;
-  // adapters JSON-decode complex values when their generator needs them.
-  map<string, string> config = 1;
-  // Stable identifier for this config snapshot. Pass back as
-  // current_etag on the next call to short-circuit when unchanged.
-  string etag = 2;
-  // True when etag differs from current_etag — the caller must apply
-  // the new config. False means the response is a no-op confirmation.
-  bool changed = 3;
-  google.protobuf.Timestamp updated_at = 4;
+  // Full config template — everything the protocol needs that HUE
+  // doesn't own. The renderer fills the parts marked with placeholders.
+  ConfigTemplate template = 1;
+  // Small overrides referenced from the template via `${vars.<key>}`
+  // or `{{.Vars.<key>}}`. Keys MAY use dot-notation
+  // ("xray.xhttp.path") — the renderer treats them as flat strings.
+  map<string, string> vars = 2;
+  // Active users the service should serve. Today this is "all active
+  // users"; per-service / per-manager scoping is a roadmap follow-up.
+  // The template renders the list with whatever shape the protocol
+  // wants (vless clients[], wireguard [Peer]s, ...).
+  repeated ConfigUser users = 3;
+  // Stable identifier for this snapshot. Pass back as current_etag on
+  // the next call to short-circuit when unchanged.
+  string etag = 4;
+  bool changed = 5;
+  google.protobuf.Timestamp updated_at = 6;
 }

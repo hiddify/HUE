@@ -96,6 +96,16 @@ func CurrentDownload(v int64) predicate.Service {
 	return predicate.Service(sql.FieldEQ(FieldCurrentDownload, v))
 }
 
+// ConfigTemplate applies equality check predicate on the "config_template" field. It's identical to ConfigTemplateEQ.
+func ConfigTemplate(v string) predicate.Service {
+	return predicate.Service(sql.FieldEQ(FieldConfigTemplate, v))
+}
+
+// ConfigTemplateFormat applies equality check predicate on the "config_template_format" field. It's identical to ConfigTemplateFormatEQ.
+func ConfigTemplateFormat(v string) predicate.Service {
+	return predicate.Service(sql.FieldEQ(FieldConfigTemplateFormat, v))
+}
+
 // ConfigEtag applies equality check predicate on the "config_etag" field. It's identical to ConfigEtagEQ.
 func ConfigEtag(v string) predicate.Service {
 	return predicate.Service(sql.FieldEQ(FieldConfigEtag, v))
@@ -491,14 +501,164 @@ func CurrentDownloadLTE(v int64) predicate.Service {
 	return predicate.Service(sql.FieldLTE(FieldCurrentDownload, v))
 }
 
-// ConfigIsNil applies the IsNil predicate on the "config" field.
-func ConfigIsNil() predicate.Service {
-	return predicate.Service(sql.FieldIsNull(FieldConfig))
+// ConfigTemplateEQ applies the EQ predicate on the "config_template" field.
+func ConfigTemplateEQ(v string) predicate.Service {
+	return predicate.Service(sql.FieldEQ(FieldConfigTemplate, v))
 }
 
-// ConfigNotNil applies the NotNil predicate on the "config" field.
-func ConfigNotNil() predicate.Service {
-	return predicate.Service(sql.FieldNotNull(FieldConfig))
+// ConfigTemplateNEQ applies the NEQ predicate on the "config_template" field.
+func ConfigTemplateNEQ(v string) predicate.Service {
+	return predicate.Service(sql.FieldNEQ(FieldConfigTemplate, v))
+}
+
+// ConfigTemplateIn applies the In predicate on the "config_template" field.
+func ConfigTemplateIn(vs ...string) predicate.Service {
+	return predicate.Service(sql.FieldIn(FieldConfigTemplate, vs...))
+}
+
+// ConfigTemplateNotIn applies the NotIn predicate on the "config_template" field.
+func ConfigTemplateNotIn(vs ...string) predicate.Service {
+	return predicate.Service(sql.FieldNotIn(FieldConfigTemplate, vs...))
+}
+
+// ConfigTemplateGT applies the GT predicate on the "config_template" field.
+func ConfigTemplateGT(v string) predicate.Service {
+	return predicate.Service(sql.FieldGT(FieldConfigTemplate, v))
+}
+
+// ConfigTemplateGTE applies the GTE predicate on the "config_template" field.
+func ConfigTemplateGTE(v string) predicate.Service {
+	return predicate.Service(sql.FieldGTE(FieldConfigTemplate, v))
+}
+
+// ConfigTemplateLT applies the LT predicate on the "config_template" field.
+func ConfigTemplateLT(v string) predicate.Service {
+	return predicate.Service(sql.FieldLT(FieldConfigTemplate, v))
+}
+
+// ConfigTemplateLTE applies the LTE predicate on the "config_template" field.
+func ConfigTemplateLTE(v string) predicate.Service {
+	return predicate.Service(sql.FieldLTE(FieldConfigTemplate, v))
+}
+
+// ConfigTemplateContains applies the Contains predicate on the "config_template" field.
+func ConfigTemplateContains(v string) predicate.Service {
+	return predicate.Service(sql.FieldContains(FieldConfigTemplate, v))
+}
+
+// ConfigTemplateHasPrefix applies the HasPrefix predicate on the "config_template" field.
+func ConfigTemplateHasPrefix(v string) predicate.Service {
+	return predicate.Service(sql.FieldHasPrefix(FieldConfigTemplate, v))
+}
+
+// ConfigTemplateHasSuffix applies the HasSuffix predicate on the "config_template" field.
+func ConfigTemplateHasSuffix(v string) predicate.Service {
+	return predicate.Service(sql.FieldHasSuffix(FieldConfigTemplate, v))
+}
+
+// ConfigTemplateIsNil applies the IsNil predicate on the "config_template" field.
+func ConfigTemplateIsNil() predicate.Service {
+	return predicate.Service(sql.FieldIsNull(FieldConfigTemplate))
+}
+
+// ConfigTemplateNotNil applies the NotNil predicate on the "config_template" field.
+func ConfigTemplateNotNil() predicate.Service {
+	return predicate.Service(sql.FieldNotNull(FieldConfigTemplate))
+}
+
+// ConfigTemplateEqualFold applies the EqualFold predicate on the "config_template" field.
+func ConfigTemplateEqualFold(v string) predicate.Service {
+	return predicate.Service(sql.FieldEqualFold(FieldConfigTemplate, v))
+}
+
+// ConfigTemplateContainsFold applies the ContainsFold predicate on the "config_template" field.
+func ConfigTemplateContainsFold(v string) predicate.Service {
+	return predicate.Service(sql.FieldContainsFold(FieldConfigTemplate, v))
+}
+
+// ConfigTemplateFormatEQ applies the EQ predicate on the "config_template_format" field.
+func ConfigTemplateFormatEQ(v string) predicate.Service {
+	return predicate.Service(sql.FieldEQ(FieldConfigTemplateFormat, v))
+}
+
+// ConfigTemplateFormatNEQ applies the NEQ predicate on the "config_template_format" field.
+func ConfigTemplateFormatNEQ(v string) predicate.Service {
+	return predicate.Service(sql.FieldNEQ(FieldConfigTemplateFormat, v))
+}
+
+// ConfigTemplateFormatIn applies the In predicate on the "config_template_format" field.
+func ConfigTemplateFormatIn(vs ...string) predicate.Service {
+	return predicate.Service(sql.FieldIn(FieldConfigTemplateFormat, vs...))
+}
+
+// ConfigTemplateFormatNotIn applies the NotIn predicate on the "config_template_format" field.
+func ConfigTemplateFormatNotIn(vs ...string) predicate.Service {
+	return predicate.Service(sql.FieldNotIn(FieldConfigTemplateFormat, vs...))
+}
+
+// ConfigTemplateFormatGT applies the GT predicate on the "config_template_format" field.
+func ConfigTemplateFormatGT(v string) predicate.Service {
+	return predicate.Service(sql.FieldGT(FieldConfigTemplateFormat, v))
+}
+
+// ConfigTemplateFormatGTE applies the GTE predicate on the "config_template_format" field.
+func ConfigTemplateFormatGTE(v string) predicate.Service {
+	return predicate.Service(sql.FieldGTE(FieldConfigTemplateFormat, v))
+}
+
+// ConfigTemplateFormatLT applies the LT predicate on the "config_template_format" field.
+func ConfigTemplateFormatLT(v string) predicate.Service {
+	return predicate.Service(sql.FieldLT(FieldConfigTemplateFormat, v))
+}
+
+// ConfigTemplateFormatLTE applies the LTE predicate on the "config_template_format" field.
+func ConfigTemplateFormatLTE(v string) predicate.Service {
+	return predicate.Service(sql.FieldLTE(FieldConfigTemplateFormat, v))
+}
+
+// ConfigTemplateFormatContains applies the Contains predicate on the "config_template_format" field.
+func ConfigTemplateFormatContains(v string) predicate.Service {
+	return predicate.Service(sql.FieldContains(FieldConfigTemplateFormat, v))
+}
+
+// ConfigTemplateFormatHasPrefix applies the HasPrefix predicate on the "config_template_format" field.
+func ConfigTemplateFormatHasPrefix(v string) predicate.Service {
+	return predicate.Service(sql.FieldHasPrefix(FieldConfigTemplateFormat, v))
+}
+
+// ConfigTemplateFormatHasSuffix applies the HasSuffix predicate on the "config_template_format" field.
+func ConfigTemplateFormatHasSuffix(v string) predicate.Service {
+	return predicate.Service(sql.FieldHasSuffix(FieldConfigTemplateFormat, v))
+}
+
+// ConfigTemplateFormatIsNil applies the IsNil predicate on the "config_template_format" field.
+func ConfigTemplateFormatIsNil() predicate.Service {
+	return predicate.Service(sql.FieldIsNull(FieldConfigTemplateFormat))
+}
+
+// ConfigTemplateFormatNotNil applies the NotNil predicate on the "config_template_format" field.
+func ConfigTemplateFormatNotNil() predicate.Service {
+	return predicate.Service(sql.FieldNotNull(FieldConfigTemplateFormat))
+}
+
+// ConfigTemplateFormatEqualFold applies the EqualFold predicate on the "config_template_format" field.
+func ConfigTemplateFormatEqualFold(v string) predicate.Service {
+	return predicate.Service(sql.FieldEqualFold(FieldConfigTemplateFormat, v))
+}
+
+// ConfigTemplateFormatContainsFold applies the ContainsFold predicate on the "config_template_format" field.
+func ConfigTemplateFormatContainsFold(v string) predicate.Service {
+	return predicate.Service(sql.FieldContainsFold(FieldConfigTemplateFormat, v))
+}
+
+// ConfigVarsIsNil applies the IsNil predicate on the "config_vars" field.
+func ConfigVarsIsNil() predicate.Service {
+	return predicate.Service(sql.FieldIsNull(FieldConfigVars))
+}
+
+// ConfigVarsNotNil applies the NotNil predicate on the "config_vars" field.
+func ConfigVarsNotNil() predicate.Service {
+	return predicate.Service(sql.FieldNotNull(FieldConfigVars))
 }
 
 // ConfigEtagEQ applies the EQ predicate on the "config_etag" field.

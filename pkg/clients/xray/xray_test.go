@@ -14,6 +14,9 @@ import (
 // Compile-time assertion: the xray adapter implements clients.Client.
 var _ clients.Client = (*xray.Client)(nil)
 
+// Compile-time assertion: XrayJSON implements xray.Renderer.
+var _ xray.Renderer = xray.XrayJSON{}
+
 func TestXray_NewRejectsEmptyEndpoint(t *testing.T) {
 	t.Parallel()
 	if _, err := xray.New(xray.Config{}); err == nil {
@@ -21,21 +24,18 @@ func TestXray_NewRejectsEmptyEndpoint(t *testing.T) {
 	}
 }
 
-func TestXray_NewRequiresGeneratorWhenSyncConfigSet(t *testing.T) {
+func TestXray_NewRequiresRendererWhenSyncConfigSet(t *testing.T) {
 	t.Parallel()
 	_, err := xray.New(xray.Config{
 		Endpoint:   "127.0.0.1:0",
 		ServiceID:  "svc-1",
-		SyncConfig: stubSyncConfig(nil, "etag", true, nil),
-		// no Generator
+		SyncConfig: stubSyncConfig(clients.ConfigSnapshot{Changed: true}, nil),
 	})
-	if err == nil || !strings.Contains(err.Error(), "Generator") {
-		t.Fatalf("expected error about missing Generator, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "Renderer") {
+		t.Fatalf("expected error about missing Renderer, got %v", err)
 	}
 }
 
-// Default capabilities advertise Healthcheck only when SyncConfig is
-// not wired; CapConfigSync flips on once a callback is supplied.
 func TestXray_CapabilitiesReflectWiring(t *testing.T) {
 	t.Parallel()
 
@@ -51,8 +51,8 @@ func TestXray_CapabilitiesReflectWiring(t *testing.T) {
 	wired, err := xray.New(xray.Config{
 		Endpoint:   "127.0.0.1:0",
 		ServiceID:  "svc-1",
-		Generator:  xray.VlessXHTTP{},
-		SyncConfig: stubSyncConfig(map[string]string{"port": "443"}, "e1", true, nil),
+		Renderer:   xray.XrayJSON{},
+		SyncConfig: stubSyncConfig(clients.ConfigSnapshot{Changed: true, Template: "{}"}, nil),
 	})
 	if err != nil {
 		t.Fatalf("New (wired): %v", err)
@@ -75,25 +75,54 @@ func TestXray_SyncConfigUnsupportedWithoutCallback(t *testing.T) {
 	}
 }
 
-func TestXray_SyncConfigAppliesAndCachesEtag(t *testing.T) {
+// End-to-end: snapshot from HUE → text/template render → ApplyConfig.
+// Asserts that user UUIDs come from snap.Users (not vars), that vars
+// substitute, and that the etag is cached.
+func TestXray_SyncConfigRendersUsersAndCachesEtag(t *testing.T) {
 	t.Parallel()
-	kv := map[string]string{
-		"port":       "443",
-		"user_uuid":  "11111111-2222-3333-4444-555555555555",
-		"xhttp_path": "/api",
+	snap := clients.ConfigSnapshot{
+		Template: `{
+  "inbounds": [{
+    "port": {{.Vars.port}},
+    "protocol": "vless",
+    "settings": {
+      "decryption": "none",
+      "clients": [
+        {{- range $i, $u := .Users -}}
+        {{- if $i}},{{end}}
+        { "id": {{$u.ID | quote}} }
+        {{- end -}}
+      ]
+    },
+    "streamSettings": {
+      "network": "xhttp",
+      "xhttpSettings": { "path": {{getVar "xray.xhttp.path" "/api" | quote}} }
+    }
+  }]
+}`,
+		TemplateFormat: "xray-json",
+		Vars: map[string]string{
+			"port":            "443",
+			"xray.xhttp.path": "/explicit",
+		},
+		Users: []clients.ConfigUser{
+			{ID: "11111111-2222-3333-4444-555555555555", Username: "alice"},
+			{ID: "22222222-3333-4444-5555-666666666666", Username: "bob"},
+		},
+		Etag:    "etag-1",
+		Changed: true,
 	}
 
 	var applied atomic.Int32
-	var lastBytes []byte
-
+	var rendered []byte
 	c, err := xray.New(xray.Config{
 		Endpoint:   "127.0.0.1:0",
 		ServiceID:  "svc-1",
-		Generator:  xray.VlessXHTTP{},
-		SyncConfig: stubSyncConfig(kv, "etag-1", true, nil),
+		Renderer:   xray.XrayJSON{},
+		SyncConfig: stubSyncConfig(snap, nil),
 		ApplyConfig: func(b []byte) error {
 			applied.Add(1)
-			lastBytes = b
+			rendered = b
 			return nil
 		},
 	})
@@ -115,32 +144,128 @@ func TestXray_SyncConfigAppliesAndCachesEtag(t *testing.T) {
 	if got := c.CachedEtag(); got != "etag-1" {
 		t.Errorf("CachedEtag = %q, want %q", got, "etag-1")
 	}
-	if !strings.Contains(string(lastBytes), `"port":     443`) {
-		t.Errorf("generated config does not contain the rendered port:\n%s", lastBytes)
-	}
-	if !strings.Contains(string(lastBytes), kv["user_uuid"]) {
-		t.Error("generated config does not contain the user UUID")
+
+	got := string(rendered)
+	for _, want := range []string{
+		`"port": 443`,
+		`"path": "/explicit"`,
+		`"id": "11111111-2222-3333-4444-555555555555"`,
+		`"id": "22222222-3333-4444-5555-666666666666"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("rendered output missing %q.\n--- output ---\n%s", want, got)
+		}
 	}
 }
 
-// When the server returns changed=false, the adapter must NOT regenerate
-// or call ApplyConfig — that's the whole point of the etag short-circuit.
+// Dotted-key fallback via getVar — author wrote a key that isn't in
+// vars, default kicks in.
+func TestXray_GetVarFallsBackToDefault(t *testing.T) {
+	t.Parallel()
+	snap := clients.ConfigSnapshot{
+		Template: `{"path": {{getVar "missing.key" "/fallback" | quote}}}`,
+		Vars:     map[string]string{},
+		Changed:  true,
+		Etag:     "e",
+	}
+	c, err := xray.New(xray.Config{
+		Endpoint:    "127.0.0.1:0",
+		ServiceID:   "svc-1",
+		Renderer:    xray.XrayJSON{},
+		SyncConfig:  stubSyncConfig(snap, nil),
+		ApplyConfig: func([]byte) error { return nil },
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer c.Close()
+	if _, err := c.SyncConfig(context.Background()); err != nil {
+		t.Fatalf("SyncConfig: %v", err)
+	}
+	if !strings.Contains(string(c.CachedConfig()), `"path": "/fallback"`) {
+		t.Errorf("default did not apply.\n%s", c.CachedConfig())
+	}
+}
+
+// Multiple-transport demo: one template emits two parallel inbounds
+// (xhttp + ws) gated by a vars flag. Asserts both render from the
+// same Users list.
+func TestXray_MultipleTransportsFromOneTemplate(t *testing.T) {
+	t.Parallel()
+	tpl := `{
+  "inbounds": [
+    {
+      "tag": "vless-xhttp",
+      "port": {{.Vars.xhttp_port}},
+      "protocol": "vless",
+      "settings": { "decryption": "none", "clients": [
+        {{- range $i, $u := .Users -}}
+        {{- if $i}},{{end}}{ "id": {{$u.ID | quote}} }
+        {{- end -}}
+      ] },
+      "streamSettings": { "network": "xhttp", "xhttpSettings": { "path": {{.Vars.xhttp_path | quote}} } }
+    }
+    {{- if eq (getVar "xray.ws.enabled" "false") "true" -}},
+    {
+      "tag": "vless-ws",
+      "port": {{.Vars.ws_port}},
+      "protocol": "vless",
+      "settings": { "decryption": "none", "clients": [
+        {{- range $i, $u := .Users -}}
+        {{- if $i}},{{end}}{ "id": {{$u.ID | quote}} }
+        {{- end -}}
+      ] },
+      "streamSettings": { "network": "ws", "wsSettings": { "path": {{.Vars.ws_path | quote}} } }
+    }
+    {{- end -}}
+  ]
+}`
+
+	snap := clients.ConfigSnapshot{
+		Template: tpl,
+		Vars: map[string]string{
+			"xhttp_port":      "443",
+			"xhttp_path":      "/api",
+			"ws_port":         "8443",
+			"ws_path":         "/ws",
+			"xray.ws.enabled": "true",
+		},
+		Users:   []clients.ConfigUser{{ID: "u1"}},
+		Changed: true,
+		Etag:    "e",
+	}
+	c, _ := xray.New(xray.Config{
+		Endpoint:    "127.0.0.1:0",
+		ServiceID:   "svc",
+		Renderer:    xray.XrayJSON{},
+		SyncConfig:  stubSyncConfig(snap, nil),
+		ApplyConfig: func([]byte) error { return nil },
+	})
+	defer c.Close()
+	if _, err := c.SyncConfig(context.Background()); err != nil {
+		t.Fatalf("SyncConfig: %v", err)
+	}
+	got := string(c.CachedConfig())
+	for _, want := range []string{`"vless-xhttp"`, `"vless-ws"`, `"path": "/api"`, `"path": "/ws"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q.\n--- output ---\n%s", want, got)
+		}
+	}
+}
+
 func TestXray_SyncConfigShortCircuitsOnUnchangedEtag(t *testing.T) {
 	t.Parallel()
 	var applied atomic.Int32
-	c, err := xray.New(xray.Config{
+	c, _ := xray.New(xray.Config{
 		Endpoint:   "127.0.0.1:0",
 		ServiceID:  "svc-1",
-		Generator:  xray.VlessXHTTP{},
-		SyncConfig: stubSyncConfig(nil, "same-etag", false, nil),
+		Renderer:   xray.XrayJSON{},
+		SyncConfig: stubSyncConfig(clients.ConfigSnapshot{Etag: "same", Changed: false}, nil),
 		ApplyConfig: func([]byte) error {
 			applied.Add(1)
 			return nil
 		},
 	})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
 	defer c.Close()
 
 	changed, err := c.SyncConfig(context.Background())
@@ -155,72 +280,62 @@ func TestXray_SyncConfigShortCircuitsOnUnchangedEtag(t *testing.T) {
 	}
 }
 
-func TestXray_SyncConfigPropagatesGeneratorErrors(t *testing.T) {
+// Renderer must reject a template format it doesn't accept.
+func TestXray_RendererFormatNegotiation(t *testing.T) {
 	t.Parallel()
-	c, err := xray.New(xray.Config{
+	c, _ := xray.New(xray.Config{
 		Endpoint:    "127.0.0.1:0",
 		ServiceID:   "svc-1",
-		Generator:   xray.VlessXHTTP{},
-		SyncConfig:  stubSyncConfig(map[string]string{"port": "443"}, "e", true, nil), // missing user_uuid
+		Renderer:    xray.XrayJSON{},
+		SyncConfig:  stubSyncConfig(clients.ConfigSnapshot{Template: "x", TemplateFormat: "wireguard-ini", Changed: true, Etag: "e"}, nil),
 		ApplyConfig: func([]byte) error { return nil },
 	})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
 	defer c.Close()
-
 	if _, err := c.SyncConfig(context.Background()); err == nil ||
-		!strings.Contains(err.Error(), "user_uuid") {
-		t.Fatalf("expected generator error about user_uuid, got %v", err)
+		!strings.Contains(err.Error(), "wireguard-ini") {
+		t.Fatalf("expected format-mismatch error, got %v", err)
 	}
 }
 
-// ----- VlessXHTTP unit tests -----
-
-func TestVlessXHTTP_RejectsMissingRequiredKeys(t *testing.T) {
+// Bad templates fail loudly with the rendered text in the error so the
+// operator can see what happened.
+func TestXray_InvalidJSONInRenderedTemplate(t *testing.T) {
 	t.Parallel()
-	cases := []map[string]string{
-		nil,
-		{},
-		{"port": "443"},
-		{"port": "443", "user_uuid": "u"},
-	}
-	for i, kv := range cases {
-		if _, err := (xray.VlessXHTTP{}).Generate(kv); err == nil {
-			t.Errorf("case %d: expected error, got nil", i)
-		}
+	c, _ := xray.New(xray.Config{
+		Endpoint:    "127.0.0.1:0",
+		ServiceID:   "svc-1",
+		Renderer:    xray.XrayJSON{},
+		SyncConfig:  stubSyncConfig(clients.ConfigSnapshot{Template: `{"a": 1`, Changed: true, Etag: "e"}, nil),
+		ApplyConfig: func([]byte) error { return nil },
+	})
+	defer c.Close()
+	if _, err := c.SyncConfig(context.Background()); err == nil ||
+		!strings.Contains(err.Error(), "not valid JSON") {
+		t.Fatalf("expected JSON-validation error, got %v", err)
 	}
 }
 
-func TestVlessXHTTP_TLSRequiresBothCertAndKey(t *testing.T) {
+// Missing template var with missingkey=error must fail at render time
+// rather than producing "<no value>" silently in the output.
+func TestXray_MissingVarFailsLoudly(t *testing.T) {
 	t.Parallel()
-	kv := map[string]string{
-		"port":         "443",
-		"user_uuid":    "u",
-		"xhttp_path":   "/p",
-		"tls_cert_pem": "CERT",
-		// missing tls_key_pem
-	}
-	if _, err := (xray.VlessXHTTP{}).Generate(kv); err == nil ||
-		!strings.Contains(err.Error(), "tls_key_pem") {
-		t.Fatalf("expected tls_key_pem error, got %v", err)
-	}
-}
-
-func TestRegistry_LookupBuiltin(t *testing.T) {
-	t.Parallel()
-	if g := xray.Generator("vless-xhttp"); g == nil {
-		t.Fatal("vless-xhttp generator must be pre-registered")
-	}
-	if g := xray.Generator("nonexistent"); g != nil {
-		t.Errorf("Generator(unknown) = %v, want nil", g)
+	c, _ := xray.New(xray.Config{
+		Endpoint:    "127.0.0.1:0",
+		ServiceID:   "svc-1",
+		Renderer:    xray.XrayJSON{},
+		SyncConfig:  stubSyncConfig(clients.ConfigSnapshot{Template: `{"port": {{.Vars.nope}}}`, Vars: map[string]string{}, Changed: true, Etag: "e"}, nil),
+		ApplyConfig: func([]byte) error { return nil },
+	})
+	defer c.Close()
+	if _, err := c.SyncConfig(context.Background()); err == nil {
+		t.Fatal("expected missingkey error for unknown var")
 	}
 }
 
 // ----- helpers -----
 
-func stubSyncConfig(kv map[string]string, etag string, changed bool, err error) clients.SyncConfigFunc {
-	return func(_ context.Context, _ string) (map[string]string, string, bool, error) {
-		return kv, etag, changed, err
+func stubSyncConfig(snap clients.ConfigSnapshot, err error) clients.SyncConfigFunc {
+	return func(_ context.Context, _ string) (clients.ConfigSnapshot, error) {
+		return snap, err
 	}
 }

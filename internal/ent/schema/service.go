@@ -41,13 +41,19 @@ func (Service) Fields() []ent.Field {
 		field.Int64("current_total").NonNegative().Default(0),
 		field.Int64("current_upload").NonNegative().Default(0),
 		field.Int64("current_download").NonNegative().Default(0),
-		// Per-service abstract key-value config — interpreted by the
-		// matching pkg/clients/<protocol> ConfigGenerator on the client
-		// side. Stored as JSONB so values can be opaque blobs (PEM,
-		// JSON-encoded substructures, …).
-		field.JSON("config", map[string]string{}).Optional(),
-		// Etag is updated whenever config changes; SyncConfig short-
-		// circuits when caller's etag matches.
+		// Full config template — the literal protocol-native config
+		// (xray JSON, wireguard ini, …) the renderer fills in at
+		// SyncConfig time. Stored as text since it can be quite long.
+		field.Text("config_template").Optional(),
+		// Hint for the renderer to pick the right substitution
+		// dialect. Today: "xray-json" | "wireguard-ini" | "openvpn-conf".
+		field.String("config_template_format").Optional().MaxLen(32),
+		// Small per-service overrides referenced from the template via
+		// ${vars.<key>} or {{.Vars.<key>}}. Keys MAY be dotted; the
+		// renderer treats them as flat strings.
+		field.JSON("config_vars", map[string]string{}).Optional(),
+		// Etag is updated whenever any of {template, format, vars}
+		// changes; SyncConfig short-circuits when caller's etag matches.
 		field.String("config_etag").Optional().MaxLen(64),
 	}
 }

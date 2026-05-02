@@ -109,26 +109,52 @@ type Client interface {
 	Close() error
 }
 
+// ConfigUser is HUE's view of one user the service should serve.
+// ID doubles as the vless UUID; PublicKey is for WireGuard etc. The
+// renderer picks whatever fields its protocol needs.
+type ConfigUser struct {
+	ID        string
+	Username  string
+	PublicKey string
+	Groups    []string
+}
+
+// ConfigSnapshot is what HUE returns from NodeService.SyncConfig. The
+// adapter's renderer substitutes the template using Vars and Users to
+// produce the protocol-specific config bytes the service consumes.
+//
+// Templates use Go's text/template syntax — `{{.Vars.port}}`,
+// `{{range .Users}}{{.ID}}{{end}}` etc. — so the same template can
+// emit a vless inbound, a wireguard config, multiple parallel
+// transports on the same service, REALITY blocks, anything the
+// underlying protocol supports without code changes in HUE.
+type ConfigSnapshot struct {
+	// Template is the literal protocol-native config with template
+	// placeholders. Empty when Changed is false.
+	Template string
+	// TemplateFormat hints which renderer to use ("xray-json",
+	// "wireguard-ini", …). Renderers reject unknown formats.
+	TemplateFormat string
+	// Vars are small per-service overrides referenced via
+	// {{.Vars.<key>}}. Keys MAY be dotted ("xray.xhttp.path").
+	Vars map[string]string
+	// Users is the active set of users the service should serve, as
+	// reported by HUE at request time.
+	Users []ConfigUser
+	// Etag is the snapshot identifier; pass back as currentEtag on
+	// the next call to short-circuit when nothing changed.
+	Etag string
+	// Changed is true when Template/Vars/Users carry fresh data, false
+	// when the response is a 304-equivalent (caller already up to date).
+	Changed bool
+}
+
 // SyncConfigFunc is the callback an adapter uses to fetch the current
-// config from HUE. The contract:
-//
-//   - currentEtag: the etag the adapter received last time (empty on
-//     first call).
-//   - returned kv:    the current config (empty map when changed=false).
-//   - returned etag:  what the adapter should store and pass on the
-//     next call.
-//   - returned changed: true if kv must be (re-)applied; false means
-//     the local copy is already up to date.
-//
-// Application code wires this to a real huev1.NodeServiceClient.
-// Tests inject a fake. Keeping the adapter free of huev1 imports keeps
-// the public package tree light.
-type SyncConfigFunc func(ctx context.Context, currentEtag string) (
-	kv map[string]string,
-	etag string,
-	changed bool,
-	err error,
-)
+// config snapshot from HUE. Application code wires this to a real
+// huev1.NodeServiceClient.SyncConfig wrapper; tests inject a fake.
+// Keeping the adapter free of huev1 imports keeps the public package
+// tree light.
+type SyncConfigFunc func(ctx context.Context, currentEtag string) (ConfigSnapshot, error)
 
 // ErrUnsupported is the sentinel an adapter returns when a method is
 // called whose Capabilities bit is unset. Engine code should match it

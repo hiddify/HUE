@@ -36,8 +36,12 @@ const (
 	FieldCurrentUpload = "current_upload"
 	// FieldCurrentDownload holds the string denoting the current_download field in the database.
 	FieldCurrentDownload = "current_download"
-	// FieldConfig holds the string denoting the config field in the database.
-	FieldConfig = "config"
+	// FieldConfigTemplate holds the string denoting the config_template field in the database.
+	FieldConfigTemplate = "config_template"
+	// FieldConfigTemplateFormat holds the string denoting the config_template_format field in the database.
+	FieldConfigTemplateFormat = "config_template_format"
+	// FieldConfigVars holds the string denoting the config_vars field in the database.
+	FieldConfigVars = "config_vars"
 	// FieldConfigEtag holds the string denoting the config_etag field in the database.
 	FieldConfigEtag = "config_etag"
 	// EdgeNode holds the string denoting the node edge name in mutations.
@@ -66,7 +70,9 @@ var Columns = []string{
 	FieldCurrentTotal,
 	FieldCurrentUpload,
 	FieldCurrentDownload,
-	FieldConfig,
+	FieldConfigTemplate,
+	FieldConfigTemplateFormat,
+	FieldConfigVars,
 	FieldConfigEtag,
 }
 
@@ -103,6 +109,8 @@ var (
 	DefaultCurrentDownload int64
 	// CurrentDownloadValidator is a validator for the "current_download" field. It is called by the builders before save.
 	CurrentDownloadValidator func(int64) error
+	// ConfigTemplateFormatValidator is a validator for the "config_template_format" field. It is called by the builders before save.
+	ConfigTemplateFormatValidator func(string) error
 	// ConfigEtagValidator is a validator for the "config_etag" field. It is called by the builders before save.
 	ConfigEtagValidator func(string) error
 	// DefaultID holds the default value on creation for the "id" field.
@@ -196,6 +204,16 @@ func ByCurrentUpload(opts ...sql.OrderTermOption) OrderOption {
 // ByCurrentDownload orders the results by the current_download field.
 func ByCurrentDownload(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCurrentDownload, opts...).ToFunc()
+}
+
+// ByConfigTemplate orders the results by the config_template field.
+func ByConfigTemplate(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldConfigTemplate, opts...).ToFunc()
+}
+
+// ByConfigTemplateFormat orders the results by the config_template_format field.
+func ByConfigTemplateFormat(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldConfigTemplateFormat, opts...).ToFunc()
 }
 
 // ByConfigEtag orders the results by the config_etag field.

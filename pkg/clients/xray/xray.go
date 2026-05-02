@@ -35,6 +35,7 @@ package xray
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -59,11 +60,12 @@ type Config struct {
 	// Required when SyncConfig is non-nil.
 	ServiceID string
 
-	// Generator turns the kv config from HUE into protocol-specific
-	// bytes (e.g., a vless inbound JSON). Required when SyncConfig is
-	// non-nil. See pkg/clients/xray/config.go for the shipped
-	// generators and how to add new ones.
-	Generator ConfigGenerator
+	// Renderer turns the ConfigSnapshot HUE returns (template + vars +
+	// users) into the bytes the running xray process consumes.
+	// Required when SyncConfig is non-nil. The default XrayJSON{}
+	// covers any xray-core inbound — the per-protocol shape lives in
+	// the template, not in Go code.
+	Renderer Renderer
 
 	// SyncConfig is the callback that fetches HUE's current config for
 	// this service. Application code wires it to a real
@@ -111,8 +113,8 @@ func New(cfg Config, opts ...Option) (*Client, error) {
 		if cfg.ServiceID == "" {
 			return nil, errors.New("xray: Config.ServiceID is required when SyncConfig is set")
 		}
-		if cfg.Generator == nil {
-			return nil, errors.New("xray: Config.Generator is required when SyncConfig is set")
+		if cfg.Renderer == nil {
+			return nil, errors.New("xray: Config.Renderer is required when SyncConfig is set")
 		}
 	}
 	if cfg.DialTimeout == 0 {
@@ -184,13 +186,13 @@ func (c *Client) RemoveUser(_ context.Context, _ clients.User) error {
 	return clients.ErrUnsupported
 }
 
-// SyncConfig pulls the adapter's current config from HUE, generates
-// the xray-specific bytes via the configured Generator, and applies
-// them via the configured ApplyConfig callback. Reports whether the
-// local config was actually replaced.
+// SyncConfig pulls the adapter's current config snapshot from HUE,
+// runs it through the configured Renderer, and applies the rendered
+// bytes via ApplyConfig. Reports whether the local config was actually
+// replaced.
 //
 // Idempotent and cheap when the etag is unchanged: the inner RPC
-// returns `changed: false` and SyncConfig is a no-op.
+// returns Changed=false and SyncConfig is a no-op (no render, no apply).
 func (c *Client) SyncConfig(ctx context.Context) (bool, error) {
 	if c.cfg.SyncConfig == nil {
 		return false, clients.ErrUnsupported
@@ -200,28 +202,33 @@ func (c *Client) SyncConfig(ctx context.Context) (bool, error) {
 	currentEtag := c.cachedEtag
 	c.mu.Unlock()
 
-	kv, etag, changed, err := c.cfg.SyncConfig(ctx, currentEtag)
+	snap, err := c.cfg.SyncConfig(ctx, currentEtag)
 	if err != nil {
 		return false, err
 	}
-	if !changed {
+	if !snap.Changed {
 		return false, nil
 	}
 
-	bytes, err := c.cfg.Generator.Generate(kv)
+	if snap.TemplateFormat != "" && !c.cfg.Renderer.AcceptsFormat(snap.TemplateFormat) {
+		return false, fmt.Errorf("xray: renderer %q does not accept template format %q",
+			c.cfg.Renderer.Name(), snap.TemplateFormat)
+	}
+
+	rendered, err := c.cfg.Renderer.Render(snap)
 	if err != nil {
 		return false, err
 	}
 
 	if c.cfg.ApplyConfig != nil {
-		if err := c.cfg.ApplyConfig(bytes); err != nil {
+		if err := c.cfg.ApplyConfig(rendered); err != nil {
 			return false, err
 		}
 	}
 
 	c.mu.Lock()
-	c.cachedEtag = etag
-	c.cachedBytes = bytes
+	c.cachedEtag = snap.Etag
+	c.cachedBytes = rendered
 	c.mu.Unlock()
 
 	return true, nil
