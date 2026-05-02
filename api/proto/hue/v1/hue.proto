@@ -849,7 +849,7 @@ service UsageService {
   }
 }
 
-// NodeService — node bootstrap + heartbeat with disconnect commands.
+// NodeService — node bootstrap + heartbeat + config sync.
 service NodeService {
   rpc AuthenticateNode(AuthenticateNodeRequest) returns (AuthenticateNodeResponse) {
     option (google.api.http) = {
@@ -863,4 +863,37 @@ service NodeService {
       body: "*"
     };
   }
+  // SyncConfig returns the current key-value config the calling service
+  // should be running. The values are protocol-agnostic; the adapter on
+  // the client side (e.g. pkg/clients/xray) has a ConfigGenerator that
+  // turns the KV pairs into the protocol's actual config (xray-core
+  // inbound JSON, wg config file, …).
+  //
+  // Call this on first connection to bootstrap, then periodically (or
+  // when ReportUsage signals a change). Pass `current_etag` from the
+  // last response to skip work when nothing changed.
+  rpc SyncConfig(SyncConfigRequest) returns (SyncConfigResponse) {
+    option (google.api.http) = {get: "/v1/services/{service_id}:syncConfig"};
+  }
+}
+
+message SyncConfigRequest {
+  string service_id = 1 [(buf.validate.field).string.min_len = 1];
+  // Etag returned by the previous SyncConfig (or empty on first call).
+  // When this matches the current server-side etag, the response is
+  // marked unchanged and `config` may be empty.
+  string current_etag = 2 [(buf.validate.field).string.max_len = 128];
+}
+
+message SyncConfigResponse {
+  // Abstract key-value pairs. Values are intentionally untyped strings;
+  // adapters JSON-decode complex values when their generator needs them.
+  map<string, string> config = 1;
+  // Stable identifier for this config snapshot. Pass back as
+  // current_etag on the next call to short-circuit when unchanged.
+  string etag = 2;
+  // True when etag differs from current_etag — the caller must apply
+  // the new config. False means the response is a no-op confirmation.
+  bool changed = 3;
+  google.protobuf.Timestamp updated_at = 4;
 }

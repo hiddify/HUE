@@ -96,6 +96,11 @@ func CurrentDownload(v int64) predicate.Service {
 	return predicate.Service(sql.FieldEQ(FieldCurrentDownload, v))
 }
 
+// ConfigEtag applies equality check predicate on the "config_etag" field. It's identical to ConfigEtagEQ.
+func ConfigEtag(v string) predicate.Service {
+	return predicate.Service(sql.FieldEQ(FieldConfigEtag, v))
+}
+
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
 func CreatedAtEQ(v time.Time) predicate.Service {
 	return predicate.Service(sql.FieldEQ(FieldCreatedAt, v))
@@ -484,6 +489,91 @@ func CurrentDownloadLT(v int64) predicate.Service {
 // CurrentDownloadLTE applies the LTE predicate on the "current_download" field.
 func CurrentDownloadLTE(v int64) predicate.Service {
 	return predicate.Service(sql.FieldLTE(FieldCurrentDownload, v))
+}
+
+// ConfigIsNil applies the IsNil predicate on the "config" field.
+func ConfigIsNil() predicate.Service {
+	return predicate.Service(sql.FieldIsNull(FieldConfig))
+}
+
+// ConfigNotNil applies the NotNil predicate on the "config" field.
+func ConfigNotNil() predicate.Service {
+	return predicate.Service(sql.FieldNotNull(FieldConfig))
+}
+
+// ConfigEtagEQ applies the EQ predicate on the "config_etag" field.
+func ConfigEtagEQ(v string) predicate.Service {
+	return predicate.Service(sql.FieldEQ(FieldConfigEtag, v))
+}
+
+// ConfigEtagNEQ applies the NEQ predicate on the "config_etag" field.
+func ConfigEtagNEQ(v string) predicate.Service {
+	return predicate.Service(sql.FieldNEQ(FieldConfigEtag, v))
+}
+
+// ConfigEtagIn applies the In predicate on the "config_etag" field.
+func ConfigEtagIn(vs ...string) predicate.Service {
+	return predicate.Service(sql.FieldIn(FieldConfigEtag, vs...))
+}
+
+// ConfigEtagNotIn applies the NotIn predicate on the "config_etag" field.
+func ConfigEtagNotIn(vs ...string) predicate.Service {
+	return predicate.Service(sql.FieldNotIn(FieldConfigEtag, vs...))
+}
+
+// ConfigEtagGT applies the GT predicate on the "config_etag" field.
+func ConfigEtagGT(v string) predicate.Service {
+	return predicate.Service(sql.FieldGT(FieldConfigEtag, v))
+}
+
+// ConfigEtagGTE applies the GTE predicate on the "config_etag" field.
+func ConfigEtagGTE(v string) predicate.Service {
+	return predicate.Service(sql.FieldGTE(FieldConfigEtag, v))
+}
+
+// ConfigEtagLT applies the LT predicate on the "config_etag" field.
+func ConfigEtagLT(v string) predicate.Service {
+	return predicate.Service(sql.FieldLT(FieldConfigEtag, v))
+}
+
+// ConfigEtagLTE applies the LTE predicate on the "config_etag" field.
+func ConfigEtagLTE(v string) predicate.Service {
+	return predicate.Service(sql.FieldLTE(FieldConfigEtag, v))
+}
+
+// ConfigEtagContains applies the Contains predicate on the "config_etag" field.
+func ConfigEtagContains(v string) predicate.Service {
+	return predicate.Service(sql.FieldContains(FieldConfigEtag, v))
+}
+
+// ConfigEtagHasPrefix applies the HasPrefix predicate on the "config_etag" field.
+func ConfigEtagHasPrefix(v string) predicate.Service {
+	return predicate.Service(sql.FieldHasPrefix(FieldConfigEtag, v))
+}
+
+// ConfigEtagHasSuffix applies the HasSuffix predicate on the "config_etag" field.
+func ConfigEtagHasSuffix(v string) predicate.Service {
+	return predicate.Service(sql.FieldHasSuffix(FieldConfigEtag, v))
+}
+
+// ConfigEtagIsNil applies the IsNil predicate on the "config_etag" field.
+func ConfigEtagIsNil() predicate.Service {
+	return predicate.Service(sql.FieldIsNull(FieldConfigEtag))
+}
+
+// ConfigEtagNotNil applies the NotNil predicate on the "config_etag" field.
+func ConfigEtagNotNil() predicate.Service {
+	return predicate.Service(sql.FieldNotNull(FieldConfigEtag))
+}
+
+// ConfigEtagEqualFold applies the EqualFold predicate on the "config_etag" field.
+func ConfigEtagEqualFold(v string) predicate.Service {
+	return predicate.Service(sql.FieldEqualFold(FieldConfigEtag, v))
+}
+
+// ConfigEtagContainsFold applies the ContainsFold predicate on the "config_etag" field.
+func ConfigEtagContainsFold(v string) predicate.Service {
+	return predicate.Service(sql.FieldContainsFold(FieldConfigEtag, v))
 }
 
 // HasNode applies the HasEdge predicate on the "node" edge.

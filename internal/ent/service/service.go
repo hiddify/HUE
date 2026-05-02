@@ -36,6 +36,10 @@ const (
 	FieldCurrentUpload = "current_upload"
 	// FieldCurrentDownload holds the string denoting the current_download field in the database.
 	FieldCurrentDownload = "current_download"
+	// FieldConfig holds the string denoting the config field in the database.
+	FieldConfig = "config"
+	// FieldConfigEtag holds the string denoting the config_etag field in the database.
+	FieldConfigEtag = "config_etag"
 	// EdgeNode holds the string denoting the node edge name in mutations.
 	EdgeNode = "node"
 	// Table holds the table name of the service in the database.
@@ -62,6 +66,8 @@ var Columns = []string{
 	FieldCurrentTotal,
 	FieldCurrentUpload,
 	FieldCurrentDownload,
+	FieldConfig,
+	FieldConfigEtag,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -97,6 +103,8 @@ var (
 	DefaultCurrentDownload int64
 	// CurrentDownloadValidator is a validator for the "current_download" field. It is called by the builders before save.
 	CurrentDownloadValidator func(int64) error
+	// ConfigEtagValidator is a validator for the "config_etag" field. It is called by the builders before save.
+	ConfigEtagValidator func(string) error
 	// DefaultID holds the default value on creation for the "id" field.
 	DefaultID func() uuid.UUID
 )
@@ -188,6 +196,11 @@ func ByCurrentUpload(opts ...sql.OrderTermOption) OrderOption {
 // ByCurrentDownload orders the results by the current_download field.
 func ByCurrentDownload(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCurrentDownload, opts...).ToFunc()
+}
+
+// ByConfigEtag orders the results by the config_etag field.
+func ByConfigEtag(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldConfigEtag, opts...).ToFunc()
 }
 
 // ByNodeField orders the results by node field.

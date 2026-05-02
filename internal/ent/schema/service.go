@@ -41,6 +41,14 @@ func (Service) Fields() []ent.Field {
 		field.Int64("current_total").NonNegative().Default(0),
 		field.Int64("current_upload").NonNegative().Default(0),
 		field.Int64("current_download").NonNegative().Default(0),
+		// Per-service abstract key-value config — interpreted by the
+		// matching pkg/clients/<protocol> ConfigGenerator on the client
+		// side. Stored as JSONB so values can be opaque blobs (PEM,
+		// JSON-encoded substructures, …).
+		field.JSON("config", map[string]string{}).Optional(),
+		// Etag is updated whenever config changes; SyncConfig short-
+		// circuits when caller's etag matches.
+		field.String("config_etag").Optional().MaxLen(64),
 	}
 }
 

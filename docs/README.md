@@ -18,6 +18,7 @@ Start here.
 
 - **[Architecture](architecture.md)** — components, data flow, the single-port handler, why every design decision was made.
 - **[Development](development.md)** — local setup, regenerating proto + ent, running tests, fixing common gotchas.
+- **[Protocol adapters](../pkg/clients/README.md)** — the `pkg/clients/` interface every protocol client (xray, singbox, wireguard, …) implements, plus a copy-paste template for adding a new one.
 
 ## Reference material elsewhere
 
