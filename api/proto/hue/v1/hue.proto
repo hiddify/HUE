@@ -1,21 +1,26 @@
-// hue.proto — Hiddify Usage Engine v1
+// hue.proto — Hiddify Usage Engine v1 (phase 2)
 //
-// SINGLE SOURCE OF TRUTH for the entire HUE API surface. Every RPC carries a
-// `google.api.http` annotation so `protoc-gen-grpc-gateway` produces the REST
-// router automatically. Validation rules are expressed inline via
-// `buf.validate.field` so both gRPC and gateway paths enforce the same
-// constraints with no handwritten guards.
+// SINGLE SOURCE OF TRUTH for the entire HUE API surface. Every RPC has a
+// google.api.http annotation so grpc-gateway produces REST routes
+// automatically. Validation rules use buf.validate so both transports
+// enforce the same constraints with no handwritten guards.
 //
-// Conventions:
-//   * Resource collections live under /v1/<plural>.
-//   * Custom verbs use the suffix `:verb` per Google AIP-136.
-//   * Updates use HTTP PATCH + `update_mask`; full-replace PUT is not used.
-//   * `id` fields are server-generated UUIDs unless explicitly noted.
-//   * Times are RFC3339 strings over JSON, google.protobuf.Timestamp on the wire.
+// Phase-2 vocabulary (renamed from phase 1):
+//   * Client    — tenant that consumes traffic (was: User)
+//   * Reseller  — tree of human admins (was: Manager)
+//   * Agent     — process on a node that talks to HUE (was: Service)
+//   * Owner     — root principal, API-key only, can sudo
+//   * Node      — virtual grouping of agents on one host; owns the config
+//
+// Auth model:
+//   * HUE_API_KEY  header → Owner or Agent
+//   * Authorization: Bearer → Reseller or Client (JWT via AuthService.Login)
 
 syntax = "proto3";
 
 package hue.v1;
+
+option go_package = "github.com/hiddify/hue/gen/go/hue/v1;huev1";
 
 import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
@@ -26,111 +31,136 @@ import "google/protobuf/field_mask.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/hiddify/hue/gen/go/hue/v1;huev1";
-
 // =============================================================================
 // Enums
 // =============================================================================
 
-enum UserStatus {
-  USER_STATUS_UNSPECIFIED = 0;
-  USER_STATUS_ACTIVE = 1;
-  USER_STATUS_SUSPENDED = 2;
-  USER_STATUS_EXPIRED = 3;
-  USER_STATUS_QUOTA_USED = 4;
-  USER_STATUS_PENALTY = 5;
-  USER_STATUS_INACTIVE = 6;
+enum ClientStatus {
+  CLIENT_STATUS_UNSPECIFIED = 0;
+  CLIENT_STATUS_ACTIVE      = 1;
+  CLIENT_STATUS_SUSPENDED   = 2;
+  CLIENT_STATUS_EXPIRED     = 3;
+  CLIENT_STATUS_QUOTA_USED  = 4;
+  CLIENT_STATUS_PENALTY     = 5;
+  CLIENT_STATUS_INACTIVE    = 6;
+}
+
+enum ResellerStatus {
+  RESELLER_STATUS_UNSPECIFIED = 0;
+  RESELLER_STATUS_ACTIVE      = 1;
+  RESELLER_STATUS_INACTIVE    = 2;
 }
 
 enum UsagePlanStatus {
-  USAGE_PLAN_STATUS_UNSPECIFIED = 0;
-  USAGE_PLAN_STATUS_ACTIVE = 1;
-  USAGE_PLAN_STATUS_EXPIRED = 2;
-  USAGE_PLAN_STATUS_QUOTA_USED = 3;
-  USAGE_PLAN_STATUS_SUSPENDED = 4;
+  USAGE_PLAN_STATUS_UNSPECIFIED     = 0;
+  USAGE_PLAN_STATUS_ACTIVE          = 1;
+  USAGE_PLAN_STATUS_EXPIRED         = 2;
+  USAGE_PLAN_STATUS_QUOTA_USED      = 3;
+  USAGE_PLAN_STATUS_SUSPENDED       = 4;
   USAGE_PLAN_STATUS_SESSION_REACHED = 5;
-  USAGE_PLAN_STATUS_PENALTY = 6;
-  USAGE_PLAN_STATUS_INACTIVE = 7;
-}
-
-enum ManagerStatus {
-  MANAGER_STATUS_UNSPECIFIED = 0;
-  MANAGER_STATUS_ACTIVE = 1;
-  MANAGER_STATUS_INACTIVE = 2;
+  USAGE_PLAN_STATUS_PENALTY         = 6;
+  USAGE_PLAN_STATUS_INACTIVE        = 7;
 }
 
 enum NodeStatus {
   NODE_STATUS_UNSPECIFIED = 0;
-  NODE_STATUS_ACTIVE = 1;
-  NODE_STATUS_DISABLED = 2;
+  NODE_STATUS_ACTIVE      = 1;
+  NODE_STATUS_DISABLED    = 2;
+}
+
+enum AgentKind {
+  AGENT_KIND_UNSPECIFIED = 0;
+  AGENT_KIND_XRAY        = 1;
+  AGENT_KIND_SINGBOX     = 2;
+  AGENT_KIND_WIREGUARD   = 3;
+  AGENT_KIND_OPENVPN     = 4;
+  AGENT_KIND_IPSEC       = 5;
+  AGENT_KIND_RADIUS      = 6;
+  AGENT_KIND_SSH         = 7;
 }
 
 enum ResetMode {
   RESET_MODE_UNSPECIFIED = 0;
-  RESET_MODE_NO_RESET = 1;
-  RESET_MODE_HOURLY = 2;
-  RESET_MODE_DAILY = 3;
-  RESET_MODE_WEEKLY = 4;
-  RESET_MODE_MONTHLY = 5;
-  RESET_MODE_YEARLY = 6;
+  RESET_MODE_NO_RESET    = 1;
+  RESET_MODE_HOURLY      = 2;
+  RESET_MODE_DAILY       = 3;
+  RESET_MODE_WEEKLY      = 4;
+  RESET_MODE_MONTHLY     = 5;
+  RESET_MODE_YEARLY      = 6;
 }
 
 enum EventType {
-  EVENT_TYPE_UNSPECIFIED = 0;
-  EVENT_TYPE_USER_CONNECTED = 1;
-  EVENT_TYPE_USER_DISCONNECTED = 2;
-  EVENT_TYPE_USAGE_RECORDED = 3;
-  EVENT_TYPE_USAGE_PLAN_EXPIRED = 4;
-  EVENT_TYPE_USAGE_PLAN_QUOTA_USED = 5;
-  EVENT_TYPE_NODE_RESET = 6;
-  EVENT_TYPE_MANAGER_EXPIRED = 7;
-  EVENT_TYPE_PENALTY_APPLIED = 8;
-  EVENT_TYPE_PENALTY_EXPIRED = 9;
-  EVENT_TYPE_USER_SUSPENDED = 10;
-  EVENT_TYPE_USER_ACTIVATED = 11;
-  EVENT_TYPE_MANAGER_LIMIT_REACHED = 12;
-  EVENT_TYPE_USAGE_PLAN_STARTED = 13;
-  EVENT_TYPE_MANAGER_PLAN_STARTED = 14;
-  EVENT_TYPE_SERVICE_KEY_SHARED = 15;
+  EVENT_TYPE_UNSPECIFIED            = 0;
+  // Client lifecycle
+  EVENT_TYPE_CLIENT_CONNECTED       = 1;
+  EVENT_TYPE_CLIENT_DISCONNECTED    = 2;
+  EVENT_TYPE_CLIENT_SUSPENDED       = 3;
+  EVENT_TYPE_CLIENT_ACTIVATED       = 4;
+  EVENT_TYPE_CLIENT_LIMIT_REACHED   = 5;
+  // Usage
+  EVENT_TYPE_USAGE_RECORDED         = 10;
+  EVENT_TYPE_USAGE_PLAN_EXPIRED     = 11;
+  EVENT_TYPE_USAGE_PLAN_QUOTA_USED  = 12;
+  EVENT_TYPE_USAGE_PLAN_STARTED     = 13;
+  // Penalty
+  EVENT_TYPE_PENALTY_APPLIED        = 20;
+  EVENT_TYPE_PENALTY_EXPIRED        = 21;
+  // Node
+  EVENT_TYPE_NODE_RESET             = 30;
+  EVENT_TYPE_NODE_QUOTA_REACHED     = 31;
+  // Reseller
+  EVENT_TYPE_RESELLER_EXPIRED       = 40;
+  EVENT_TYPE_RESELLER_LIMIT_REACHED = 41;
+  EVENT_TYPE_RESELLER_PLAN_STARTED  = 42;
+  // Auth
+  EVENT_TYPE_LOGIN_SUCCEEDED        = 50;
+  EVENT_TYPE_LOGIN_FAILED           = 51;
+  EVENT_TYPE_LOGIN_LOCKED_OUT       = 52;
+  EVENT_TYPE_OWNER_SUDO_LOGIN       = 53;
+  EVENT_TYPE_API_KEY_REVOKED        = 54;
+  // Certs
+  EVENT_TYPE_CERT_ADDED             = 60;
+  EVENT_TYPE_CERT_EXPIRED           = 61;
+  EVENT_TYPE_CERT_RENEWED           = 62;
+  EVENT_TYPE_CERT_SELF_SIGNED_FALLBACK = 63;
+  // Agents
+  EVENT_TYPE_AGENT_CONNECTED        = 70;
+  EVENT_TYPE_AGENT_DISCONNECTED     = 71;
+  EVENT_TYPE_AGENT_CONFIG_SYNCED    = 72;
 }
 
 enum AuthMethod {
   AUTH_METHOD_UNSPECIFIED = 0;
-  AUTH_METHOD_UUID = 1;
-  AUTH_METHOD_PASSWORD = 2;
-  AUTH_METHOD_PUBLIC_KEY = 3;
+  AUTH_METHOD_UUID        = 1;
+  AUTH_METHOD_PASSWORD    = 2;
+  AUTH_METHOD_PUBLIC_KEY  = 3;
   AUTH_METHOD_CERTIFICATE = 4;
-}
-
-enum Protocol {
-  PROTOCOL_UNSPECIFIED = 0;
-  PROTOCOL_VLESS = 1;
-  PROTOCOL_VMESS = 2;
-  PROTOCOL_TROJAN = 3;
-  PROTOCOL_SHADOWSOCKS = 4;
-  PROTOCOL_WIREGUARD = 5;
-  PROTOCOL_OPENVPN = 6;
-  PROTOCOL_IPSEC = 7;
-  PROTOCOL_L2TP = 8;
-  PROTOCOL_PPTP = 9;
-  PROTOCOL_PPP = 10;
-  PROTOCOL_SSTP = 11;
-  PROTOCOL_SSH = 12;
-  PROTOCOL_RADIUS = 13;
-  PROTOCOL_XRAY = 14;
-  PROTOCOL_SINGBOX = 15;
 }
 
 enum ApiKeyKind {
   API_KEY_KIND_UNSPECIFIED = 0;
-  API_KEY_KIND_MANAGER = 1;
-  API_KEY_KIND_SERVICE = 2;
-  API_KEY_KIND_NODE = 3;
+  API_KEY_KIND_OWNER       = 1;
+  API_KEY_KIND_AGENT       = 2;
+}
+
+enum PrincipalKind {
+  PRINCIPAL_KIND_UNSPECIFIED = 0;
+  PRINCIPAL_KIND_CLIENT      = 1;
+  PRINCIPAL_KIND_RESELLER    = 2;
+  PRINCIPAL_KIND_OWNER       = 3;
+  PRINCIPAL_KIND_AGENT       = 4;
+}
+
+enum CertIssuer {
+  CERT_ISSUER_UNSPECIFIED = 0;
+  CERT_ISSUER_SELF_SIGNED = 1;
+  CERT_ISSUER_ACME        = 2;
+  CERT_ISSUER_IMPORTED    = 3;
 }
 
 enum HealthStatus {
   HEALTH_STATUS_UNSPECIFIED = 0;
-  HEALTH_STATUS_SERVING = 1;
+  HEALTH_STATUS_SERVING     = 1;
   HEALTH_STATUS_NOT_SERVING = 2;
 }
 
@@ -139,24 +169,24 @@ enum HealthStatus {
 // =============================================================================
 
 message TrafficStats {
-  int64 total_bytes = 1;
-  int64 upload_bytes = 2;
+  int64 total_bytes    = 1;
+  int64 upload_bytes   = 2;
   int64 download_bytes = 3;
-  int64 sessions = 4;
-  int64 online_users = 5;
-  int64 active_users = 6;
+  int64 sessions       = 4;
+  int64 online_users   = 5;
+  int64 active_users   = 6;
 }
 
 message Geo {
   string country = 1;
-  string city = 2;
-  string isp = 3;
-  uint32 asn = 4;
+  string city    = 2;
+  string isp     = 3;
+  uint32 asn     = 4;
 }
 
 message ResetPolicy {
-  ResetMode mode = 1;
-  google.protobuf.Timestamp anchor_time = 2; // Day-of-month / hour-of-day boundary; server applies based on mode.
+  ResetMode mode                        = 1;
+  google.protobuf.Timestamp anchor_time = 2;
 }
 
 message Lifecycle {
@@ -165,52 +195,46 @@ message Lifecycle {
 }
 
 // =============================================================================
-// User
+// Client (was: User)
 // =============================================================================
 
-message UserInfo {
-  string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
-  repeated string groups = 2 [(buf.validate.field).repeated = {
-    max_items: 64
-    items: {
-      string: {max_len: 64}
-    }
-  }];
-  UserStatus status = 3;
-  string manager_id = 4 [(buf.validate.field).string.max_len = 64];
-  map<string, google.protobuf.Value> metadata = 5;
-  Lifecycle lifecycle = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+message ClientInfo {
+  string                              id          = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  repeated string                     groups      = 2 [(buf.validate.field).repeated = {max_items: 64, items: {string: {max_len: 64}}}];
+  ClientStatus                        status      = 3;
+  string                              reseller_id = 4 [(buf.validate.field).string.max_len = 64];
+  map<string, google.protobuf.Value>  metadata    = 5;
+  Lifecycle                           lifecycle   = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+  google.protobuf.Timestamp           first_connection_at = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+  google.protobuf.Timestamp           last_connection_at  = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
-message Certificate {
-  string name = 1 [(buf.validate.field).string.max_len = 128];
-  string private_key_pem = 2 [(buf.validate.field).string.max_len = 16384];
-  string public_key_pem = 3 [(buf.validate.field).string.max_len = 16384];
-  string certificate_pem = 4 [(buf.validate.field).string.max_len = 16384];
+message ClientCertificate {
+  string name             = 1 [(buf.validate.field).string.max_len = 128];
+  string private_key_pem  = 2 [(buf.validate.field).string.max_len = 16384];
+  string public_key_pem   = 3 [(buf.validate.field).string.max_len = 16384];
+  string certificate_pem  = 4 [(buf.validate.field).string.max_len = 16384];
 }
 
-message UserAuthMethod {
-  string uuid = 1 [(buf.validate.field).string.max_len = 64];
-  string username = 2 [(buf.validate.field).string = {
-    min_len: 1
-    max_len: 64
-    pattern: "^[a-zA-Z0-9._@-]+$"
-  }];
-  string password = 3 [(buf.validate.field).string.max_len = 256];
-  repeated Certificate certificates = 4 [(buf.validate.field).repeated.max_items = 8];
-  repeated string allowed_devices = 5 [(buf.validate.field).repeated = {
-    max_items: 32
-    items: {
-      string: {max_len: 128}
-    }
-  }];
-  map<string, google.protobuf.Value> custom = 6;
+message ClientAuthMethod {
+  string                              uuid             = 1 [(buf.validate.field).string.max_len = 64];
+  string                              username         = 2 [(buf.validate.field).string = {min_len: 1, max_len: 64, pattern: "^[a-zA-Z0-9._@-]+$"}];
+  // Plaintext password as required by downstream protocols (trojan,
+  // shadowsocks, RADIUS). HUE encrypts at rest with HUE_PASSWORD_ENC_KEY
+  // (AES-256-GCM); decrypted on the fly for AuthService.Login and
+  // ConfigService template rendering. Never echoed back on Get responses.
+  string                              password         = 3 [(buf.validate.field).string.max_len = 256];
+  string                              public_key       = 4 [(buf.validate.field).string.max_len = 16384];
+  string                              private_key      = 5 [(buf.validate.field).string.max_len = 32768];
+  repeated ClientCertificate          certificates     = 6 [(buf.validate.field).repeated.max_items = 8];
+  repeated string                     allowed_devices  = 7 [(buf.validate.field).repeated = {max_items: 32, items: {string: {max_len: 128}}}];
+  map<string, google.protobuf.Value>  custom           = 8;
 }
 
-message User {
-  UserInfo info = 1;
-  UserAuthMethod auth_method = 2;
-  UsagePlan usage_plan = 3;
+message Client {
+  ClientInfo       info        = 1;
+  ClientAuthMethod auth_method = 2;
+  UsagePlan        usage_plan  = 3;
 }
 
 // =============================================================================
@@ -218,116 +242,105 @@ message User {
 // =============================================================================
 
 message UsagePlan {
-  string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
-  string user_id = 2 [(buf.validate.field).string.max_len = 64];
-  TrafficStats limit = 3;
-  TrafficStats current = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
-  UsagePlanStatus status = 5;
-  ResetPolicy reset_policy = 6;
-  google.protobuf.Timestamp start_at = 7;
-  google.protobuf.Duration duration = 8;
-  int32 max_concurrent = 9 [(buf.validate.field).int32 = {
-    gte: 0
-    lte: 1000
-  }];
-  google.protobuf.Timestamp last_connection_at = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
-  google.protobuf.Timestamp expires_at = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
-  Lifecycle lifecycle = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string                            id                  = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string                            client_id           = 2 [(buf.validate.field).string.max_len = 64];
+  TrafficStats                      limit               = 3;
+  TrafficStats                      current             = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+  UsagePlanStatus                   status              = 5;
+  ResetPolicy                       reset_policy        = 6;
+  google.protobuf.Timestamp         start_at            = 7;
+  google.protobuf.Duration          duration            = 8;
+  int32                             max_concurrent      = 9 [(buf.validate.field).int32 = {gte: 0, lte: 1000}];
+  google.protobuf.Timestamp         last_connection_at  = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+  google.protobuf.Timestamp         expires_at          = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
+  Lifecycle                         lifecycle           = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // =============================================================================
-// Node
+// Node — virtual grouping of agents on one host; owns the config map.
 // =============================================================================
 
 message Node {
-  string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
-  string name = 2 [(buf.validate.field).string = {
-    min_len: 1
-    max_len: 128
-  }];
-  repeated string ips = 3 [(buf.validate.field).repeated = {
-    max_items: 32
-    items: {
-      string: {max_len: 64}
-    }
-  }];
-  repeated string allowed_cidrs = 4 [(buf.validate.field).repeated = {
-    max_items: 32
-    items: {
-      string: {max_len: 64}
-    }
-  }];
-  double traffic_multiplier = 5 [(buf.validate.field).double = {
-    gte: 0
-    lte: 1000
-  }];
-  ResetPolicy reset_policy = 6;
-  TrafficStats current = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
-  Geo geo = 8;
-  NodeStatus status = 9;
-  Lifecycle lifecycle = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string                              id                       = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string                              name                     = 2 [(buf.validate.field).string = {min_len: 1, max_len: 128}];
+  repeated string                     ips                      = 3 [(buf.validate.field).repeated = {max_items: 32, items: {string: {max_len: 64}}}];
+  repeated string                     allowed_cidrs            = 4 [(buf.validate.field).repeated = {max_items: 32, items: {string: {max_len: 64}}}];
+  double                              traffic_multiplier       = 5 [(buf.validate.field).double = {gte: 0, lte: 1000}];
+  ResetPolicy                         reset_policy             = 6;
+  TrafficStats                        current                  = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+  Geo                                 geo                      = 8;
+  NodeStatus                          status                   = 9;
+  // Bandwidth quota at the NODE level — sum of all agents on this node
+  // cannot exceed this. 0 = unlimited.
+  int64                               bandwidth_limit_bytes    = 10 [(buf.validate.field).int64.gte = 0];
+  // Per-node config map. Keys are dotted (e.g.
+  // "xray.numeric_version.25003007000"). Values are structpb.Value so
+  // nested structures land natively. The matching agent kind picks
+  // its keys at SyncConfig time.
+  map<string, google.protobuf.Value>  config                   = 11;
+  // Hostnames this node serves — used by DomainCertificateService to
+  // pick which certs go in CertSnapshot.
+  repeated string                     service_hostnames        = 12 [(buf.validate.field).repeated = {max_items: 64, items: {string: {max_len: 253}}}];
+  Lifecycle                           lifecycle                = 13 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// NodeInfo is the read-only public summary returned by
+// GetAvailableNodesInfo. Resellers see this to pick which node to
+// recommend to a client.
+message NodeInfo {
+  string id   = 1;
+  string name = 2;
+  Geo    geo  = 3;
 }
 
 // =============================================================================
-// Service
+// Agent (was: Service) — a process on a node speaking HUE's API.
 // =============================================================================
 
-message Service {
-  string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
-  string node_id = 2 [(buf.validate.field).string = {
-    min_len: 1
-    max_len: 64
-  }];
-  string name = 3 [(buf.validate.field).string = {
-    min_len: 1
-    max_len: 128
-  }];
-  Protocol protocol = 4;
-  repeated AuthMethod allowed_auth_methods = 5 [(buf.validate.field).repeated.max_items = 8];
-  string callback_url = 6 [(buf.validate.field).string.max_len = 512];
-  TrafficStats current = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
-  Lifecycle lifecycle = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+message Agent {
+  string                    id           = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string                    node_id      = 2 [(buf.validate.field).string = {min_len: 1, max_len: 64}];
+  string                    name         = 3 [(buf.validate.field).string = {min_len: 1, max_len: 128}];
+  AgentKind                 kind         = 4;
+  // SemVer-ish dotted version the agent advertises. Encoded to
+  // canonical uint64 via the standard rule (see version.Encode).
+  string                    version      = 5 [(buf.validate.field).string.max_len = 64];
+  google.protobuf.Timestamp last_seen_at = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+  TrafficStats              current      = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+  Lifecycle                 lifecycle    = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // =============================================================================
-// Manager + ManagerPlan
+// Reseller (was: Manager) + ResellerPlan
 // =============================================================================
 
-message Manager {
-  string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
-  string name = 2 [(buf.validate.field).string = {
-    min_len: 1
-    max_len: 128
-  }];
-  string parent_id = 3 [(buf.validate.field).string.max_len = 64];
-  ManagerStatus status = 4;
-  map<string, google.protobuf.Value> metadata = 5;
-  ManagerPlan plan = 6;
-  Lifecycle lifecycle = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+message Reseller {
+  string                              id           = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string                              name         = 2 [(buf.validate.field).string = {min_len: 1, max_len: 128}];
+  string                              display_name = 3 [(buf.validate.field).string.max_len = 128];
+  string                              parent_id    = 4 [(buf.validate.field).string.max_len = 64];
+  ResellerStatus                      status       = 5;
+  // Argon2id-hashed password. Write-only on Create/Update; never
+  // echoed back on Get.
+  string                              password     = 6 [(buf.validate.field).string.max_len = 256];
+  map<string, google.protobuf.Value>  metadata     = 7;
+  ResellerPlan                        plan         = 8;
+  Lifecycle                           lifecycle    = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
-message ManagerPlan {
-  string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
-  string manager_id = 2 [(buf.validate.field).string.max_len = 64];
-  TrafficStats limit = 3;
-  TrafficStats current = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
-  int32 max_sessions = 5 [(buf.validate.field).int32 = {
-    gte: 0
-    lte: 1000000
-  }];
-  int32 max_online_users = 6 [(buf.validate.field).int32 = {
-    gte: 0
-    lte: 1000000
-  }];
-  int32 max_active_users = 7 [(buf.validate.field).int32 = {
-    gte: 0
-    lte: 1000000
-  }];
-  ResetPolicy reset_policy = 8;
-  google.protobuf.Timestamp start_at = 9;
-  google.protobuf.Duration duration = 10;
-  google.protobuf.Timestamp expires_at = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
-  Lifecycle lifecycle = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
+message ResellerPlan {
+  string                    id                = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string                    reseller_id       = 2 [(buf.validate.field).string.max_len = 64];
+  TrafficStats              limit             = 3;
+  TrafficStats              current           = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+  int32                     max_sessions      = 5 [(buf.validate.field).int32 = {gte: 0, lte: 1000000}];
+  int32                     max_online_users  = 6 [(buf.validate.field).int32 = {gte: 0, lte: 1000000}];
+  int32                     max_active_users  = 7 [(buf.validate.field).int32 = {gte: 0, lte: 1000000}];
+  ResetPolicy               reset_policy      = 8;
+  google.protobuf.Timestamp start_at          = 9;
+  google.protobuf.Duration  duration          = 10;
+  google.protobuf.Timestamp expires_at        = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
+  Lifecycle                 lifecycle         = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // =============================================================================
@@ -335,151 +348,259 @@ message ManagerPlan {
 // =============================================================================
 
 message Event {
-  string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
-  EventType type = 2;
-  string user_id = 3;
-  string plan_id = 4;
-  string node_id = 5;
-  string service_id = 6;
-  string manager_id = 7;
-  repeated string tags = 8;
-  map<string, google.protobuf.Value> metadata = 9;
-  google.protobuf.Timestamp timestamp = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string                              id          = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  EventType                           type        = 2;
+  string                              client_id   = 3;
+  string                              plan_id     = 4;
+  string                              node_id     = 5;
+  string                              agent_id    = 6;
+  string                              reseller_id = 7;
+  repeated string                     tags        = 8;
+  map<string, google.protobuf.Value>  metadata    = 9;
+  google.protobuf.Timestamp           timestamp   = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // =============================================================================
-// Usage report
+// Usage data plane
 // =============================================================================
 
 message UsageReport {
-  string user_id = 1 [(buf.validate.field).string = {
-    min_len: 1
-    max_len: 64
-  }];
-  string node_id = 2 [(buf.validate.field).string.max_len = 64];
-  string service_id = 3 [(buf.validate.field).string.max_len = 64];
-  int64 upload = 4 [(buf.validate.field).int64.gte = 0];
-  int64 download = 5 [(buf.validate.field).int64.gte = 0];
-  string session_id = 6 [(buf.validate.field).string.max_len = 128];
-  string client_ip = 7 [(buf.validate.field).string.max_len = 64]; // discarded after geo+session
-  repeated string tags = 8 [(buf.validate.field).repeated = {
-    max_items: 16
-    items: {
-      string: {max_len: 64}
-    }
-  }];
-  google.protobuf.Timestamp timestamp = 9;
+  string                    client_id   = 1 [(buf.validate.field).string = {min_len: 1, max_len: 64}];
+  string                    node_id     = 2 [(buf.validate.field).string.max_len = 64];
+  string                    agent_id    = 3 [(buf.validate.field).string.max_len = 64];
+  int64                     upload      = 4 [(buf.validate.field).int64.gte = 0];
+  int64                     download    = 5 [(buf.validate.field).int64.gte = 0];
+  string                    session_id  = 6 [(buf.validate.field).string.max_len = 128];
+  string                    client_ip   = 7 [(buf.validate.field).string.max_len = 64]; // discarded after geo+session
+  repeated string           tags        = 8 [(buf.validate.field).repeated = {max_items: 16, items: {string: {max_len: 64}}}];
+  google.protobuf.Timestamp timestamp   = 9;
 }
 
 message UsageDecision {
-  bool accepted = 1;
-  bool quota_exceeded = 2;
-  bool session_limit_hit = 3;
-  bool should_disconnect = 4;
-  string reason = 5;
-  google.protobuf.Timestamp penalty_until = 6;
+  bool                      accepted          = 1;
+  bool                      quota_exceeded    = 2;
+  bool                      session_limit_hit = 3;
+  bool                      should_disconnect = 4;
+  string                    reason            = 5;
+  google.protobuf.Timestamp penalty_until     = 6;
 }
 
-message UserSnapshot {
-  string user_id = 1;
-  UserAuthMethod auth_method = 2;
+message ClientSnapshot {
+  string         client_id          = 1;
+  ClientAuthMethod auth_method      = 2;
   UsagePlanStatus usage_plan_status = 3;
 }
 
 // =============================================================================
-// API Keys (auth model)
+// API keys
 // =============================================================================
 
 message ApiKey {
-  string id = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
-  ApiKeyKind kind = 2;
-  string owner_id = 3 [(buf.validate.field).string.max_len = 64]; // manager / service / node id
-  string name = 4 [(buf.validate.field).string = {
-    min_len: 1
-    max_len: 128
-  }];
-  string prefix = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string                    id           = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  ApiKeyKind                kind         = 2;
+  string                    name         = 3 [(buf.validate.field).string = {min_len: 1, max_len: 128}];
+  // For AGENT keys: the agent id this key belongs to. For OWNER: empty.
+  string                    agent_id     = 4 [(buf.validate.field).string.max_len = 64];
+  string                    prefix       = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
   google.protobuf.Timestamp last_used_at = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
-  google.protobuf.Timestamp revoked_at = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
-  Lifecycle lifecycle = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+  google.protobuf.Timestamp revoked_at   = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+  google.protobuf.Timestamp expires_at   = 8;
+  Lifecycle                 lifecycle    = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// =============================================================================
+// Auth (JWT login)
+// =============================================================================
+
+message LoginRequest {
+  string username = 1 [(buf.validate.field).string = {min_len: 1, max_len: 64}];
+  // For Owner sudo, any string is accepted. For Client/Reseller, must
+  // match (decrypted plaintext for Client; Argon2id-verified for Reseller).
+  string password = 2 [(buf.validate.field).string.max_len = 256];
+  string totp     = 3 [(buf.validate.field).string.max_len = 16];
+}
+
+message LoginResponse {
+  string                    access_token  = 1;
+  string                    refresh_token = 2;
+  PrincipalKind             kind          = 3;
+  string                    subject_id    = 4;
+  google.protobuf.Timestamp expires_at    = 5;
+}
+
+message LogoutRequest {
+  string refresh_token = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message RefreshRequest {
+  string refresh_token = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message ChangePasswordRequest {
+  string current_password = 1 [(buf.validate.field).string.max_len = 256];
+  string new_password     = 2 [(buf.validate.field).string = {min_len: 8, max_len: 256}];
+}
+
+// =============================================================================
+// Domain certificates
+// =============================================================================
+
+message DomainCertificate {
+  string                    id              = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  repeated string           domain_names    = 2 [(buf.validate.field).repeated = {min_items: 1, max_items: 32, items: {string: {min_len: 1, max_len: 253}}}];
+  string                    public_key_pem  = 3 [(buf.validate.field).string = {min_len: 1, max_len: 65536}];
+  // Returned only on GetCertificate by Owner; redacted in List.
+  string                    private_key_pem = 4 [(buf.validate.field).string.max_len = 65536];
+  google.protobuf.Timestamp expires_at      = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+  CertIssuer                issuer          = 6;
+  string                    generated_node_id = 7;
+  bool                      valid           = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+  Lifecycle                 lifecycle       = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// =============================================================================
+// Config sync — per-node
+// =============================================================================
+
+message PrincipalSnapshot {
+  string                              client_id   = 1;
+  string                              username    = 2;
+  // Decrypted at request time from the encrypted-at-rest column.
+  // Returned only when the calling agent's API key matches the node
+  // assignment for this client.
+  string                              password    = 3;
+  string                              public_key  = 4;
+  repeated string                     groups      = 5;
+  ClientStatus                        status      = 6;
+}
+
+message CertSnapshot {
+  repeated string           domain_names    = 1;
+  string                    public_key_pem  = 2;
+  string                    private_key_pem = 3;
+  google.protobuf.Timestamp expires_at      = 4;
+  CertIssuer                issuer          = 5;
+}
+
+message SyncConfigRequest {
+  string node_id       = 1 [(buf.validate.field).string.min_len = 1];
+  string current_etag  = 2 [(buf.validate.field).string.max_len = 128];
+  // The agent's protocol kind — picks the relevant key prefix in
+  // Node.config (e.g. "xray.numeric_version.<N>").
+  AgentKind agent_kind = 3;
+  // SemVer-ish dotted version string. Server encodes via
+  // version.Encode and selects the largest stored N ≤ this.
+  string agent_version = 4 [(buf.validate.field).string.max_len = 64];
+}
+
+message SyncConfigResponse {
+  // The selected (template, etag) for this agent's kind+version.
+  // Values are structpb.Value so nested structures land natively.
+  // Placeholders inside string values (e.g. "{client:uuid}",
+  // "{cert:foo.example.com:private_key}") are substituted by the
+  // adapter at render time using `clients` and `certs` below.
+  map<string, google.protobuf.Value> config = 1;
+  repeated PrincipalSnapshot          clients = 2;
+  repeated CertSnapshot               certs   = 3;
+  string                              etag    = 4;
+  bool                                changed = 5;
+  google.protobuf.Timestamp           updated_at = 6;
+}
+
+message HeartbeatRequest {
+  string                    node_id  = 1 [(buf.validate.field).string.min_len = 1];
+  string                    agent_id = 2 [(buf.validate.field).string.max_len = 64];
+  TrafficStats              snapshot = 3;
+  google.protobuf.Timestamp timestamp = 4;
+}
+
+message HeartbeatResponse {
+  // Clients the agent should drop immediately (quota / suspended).
+  repeated string disconnect_client_ids = 1;
+  // True if the agent should call SyncConfig — config has changed.
+  bool config_dirty = 2;
 }
 
 // =============================================================================
 // Health
 // =============================================================================
 
-message HealthCheckRequest {
-  string service = 1; // optional service name; empty = overall
-}
-message HealthCheckResponse {
-  HealthStatus status = 1;
-}
+message HealthCheckRequest { string service = 1; }
+message HealthCheckResponse { HealthStatus status = 1; }
 
 // =============================================================================
-// Request / response messages — Admin
+// Request / response messages — clients
 // =============================================================================
 
-message CreateUserRequest {
-  User user = 1 [(google.api.field_behavior) = REQUIRED];
-}
-message GetUserRequest {
+message CreateClientRequest { Client client = 1 [(google.api.field_behavior) = REQUIRED]; }
+message GetClientRequest { string id = 1 [(buf.validate.field).string.min_len = 1]; }
+message UpdateClientRequest {
   string id = 1 [(buf.validate.field).string.min_len = 1];
-  bool include_auth_method = 2;
-}
-message UpdateUserRequest {
-  string id = 1 [(buf.validate.field).string.min_len = 1];
-  User user = 2 [(google.api.field_behavior) = REQUIRED];
+  Client client = 2 [(google.api.field_behavior) = REQUIRED];
   google.protobuf.FieldMask update_mask = 3;
 }
-message ListUsersRequest {
-  UserStatus status = 1;
-  string group = 2;
-  string manager_id = 3;
-  string search = 4;
-  int32 page_size = 5 [(buf.validate.field).int32 = {
-    gte: 0
-    lte: 500
-  }];
-  string page_token = 6;
+message ListClientsRequest {
+  ClientStatus status      = 1;
+  string       group       = 2;
+  string       reseller_id = 3;
+  string       search      = 4;
+  int32        page_size   = 5 [(buf.validate.field).int32 = {gte: 0, lte: 500}];
+  string       page_token  = 6;
 }
-message ListUsersResponse {
-  repeated User users = 1;
-  string next_page_token = 2;
-  int32 total = 3;
+message ListClientsResponse {
+  repeated Client clients         = 1;
+  string          next_page_token = 2;
+  int32           total           = 3;
 }
-message DeleteUserRequest {
-  string id = 1 [(buf.validate.field).string.min_len = 1];
-}
-message ResetUserUsageRequest {
-  string user_id = 1 [(buf.validate.field).string.min_len = 1];
-}
+message DeleteClientRequest { string id = 1 [(buf.validate.field).string.min_len = 1]; }
+message ResetClientUsageRequest { string client_id = 1 [(buf.validate.field).string.min_len = 1]; }
 
-message GetUsagePlanRequest {
-  string id = 1 [(buf.validate.field).string.min_len = 1];
-}
+message GetUsagePlanRequest { string id = 1 [(buf.validate.field).string.min_len = 1]; }
 message ListUsagePlansRequest {
-  string user_id = 1;
+  string  client_id  = 1;
   UsagePlanStatus status = 2;
-  int32 page_size = 3 [(buf.validate.field).int32 = {
-    gte: 0
-    lte: 500
-  }];
-  string page_token = 4;
+  int32   page_size  = 3 [(buf.validate.field).int32 = {gte: 0, lte: 500}];
+  string  page_token = 4;
 }
 message ListUsagePlansResponse {
-  repeated UsagePlan plans = 1;
-  string next_page_token = 2;
+  repeated UsagePlan plans           = 1;
+  string             next_page_token = 2;
 }
-message GetActiveUsagePlanRequest {
-  string user_id = 1 [(buf.validate.field).string.min_len = 1];
-}
+message GetActiveUsagePlanRequest { string client_id = 1 [(buf.validate.field).string.min_len = 1]; }
 
-message CreateNodeRequest {
-  Node node = 1 [(google.api.field_behavior) = REQUIRED];
-}
-message GetNodeRequest {
+message GetAvailableNodesInfoRequest {}
+message GetAvailableNodesInfoResponse { repeated NodeInfo nodes = 1; }
+
+// =============================================================================
+// Request / response messages — resellers
+// =============================================================================
+
+message CreateResellerRequest { Reseller reseller = 1 [(google.api.field_behavior) = REQUIRED]; }
+message GetResellerRequest { string id = 1 [(buf.validate.field).string.min_len = 1]; }
+message UpdateResellerRequest {
   string id = 1 [(buf.validate.field).string.min_len = 1];
+  Reseller reseller = 2 [(google.api.field_behavior) = REQUIRED];
+  google.protobuf.FieldMask update_mask = 3;
 }
+message ListResellersRequest {
+  string parent_id = 1;
+  ResellerStatus status = 2;
+  int32 page_size  = 3 [(buf.validate.field).int32 = {gte: 0, lte: 500}];
+  string page_token = 4;
+}
+message ListResellersResponse {
+  repeated Reseller resellers       = 1;
+  string            next_page_token = 2;
+}
+message DeleteResellerRequest { string id = 1 [(buf.validate.field).string.min_len = 1]; }
+message ResetResellerUsageRequest { string reseller_id = 1 [(buf.validate.field).string.min_len = 1]; }
+
+// =============================================================================
+// Request / response messages — nodes + agents
+// =============================================================================
+
+message CreateNodeRequest { Node node = 1 [(google.api.field_behavior) = REQUIRED]; }
+message GetNodeRequest { string id = 1 [(buf.validate.field).string.min_len = 1]; }
 message UpdateNodeRequest {
   string id = 1 [(buf.validate.field).string.min_len = 1];
   Node node = 2 [(google.api.field_behavior) = REQUIRED];
@@ -487,227 +608,156 @@ message UpdateNodeRequest {
 }
 message ListNodesRequest {
   NodeStatus status = 1;
-  int32 page_size = 2 [(buf.validate.field).int32 = {
-    gte: 0
-    lte: 500
-  }];
+  int32 page_size  = 2 [(buf.validate.field).int32 = {gte: 0, lte: 500}];
   string page_token = 3;
 }
 message ListNodesResponse {
-  repeated Node nodes = 1;
-  string next_page_token = 2;
+  repeated Node nodes           = 1;
+  string        next_page_token = 2;
 }
-message DeleteNodeRequest {
-  string id = 1 [(buf.validate.field).string.min_len = 1];
-}
-message ResetNodeUsageRequest {
-  string node_id = 1 [(buf.validate.field).string.min_len = 1];
-}
+message DeleteNodeRequest { string id = 1 [(buf.validate.field).string.min_len = 1]; }
+message ResetNodeUsageRequest { string node_id = 1 [(buf.validate.field).string.min_len = 1]; }
 
-message CreateServiceRequest {
-  Service service = 1 [(google.api.field_behavior) = REQUIRED];
-}
-message CreateServiceResponse {
-  Service service = 1;
-  string api_key = 2;
-} // plaintext key returned ONCE on create
-message GetServiceRequest {
+message CreateAgentRequest { Agent agent = 1 [(google.api.field_behavior) = REQUIRED]; }
+// Returned only on Create; plaintext key shown ONCE for the agent to store.
+message CreateAgentResponse { Agent agent = 1; string api_key = 2; }
+message GetAgentRequest { string id = 1 [(buf.validate.field).string.min_len = 1]; }
+message UpdateAgentRequest {
   string id = 1 [(buf.validate.field).string.min_len = 1];
-}
-message UpdateServiceRequest {
-  string id = 1 [(buf.validate.field).string.min_len = 1];
-  Service service = 2 [(google.api.field_behavior) = REQUIRED];
+  Agent agent = 2 [(google.api.field_behavior) = REQUIRED];
   google.protobuf.FieldMask update_mask = 3;
 }
-message ListServicesRequest {
+message ListAgentsRequest {
   string node_id = 1;
-  Protocol protocol = 2;
-  int32 page_size = 3 [(buf.validate.field).int32 = {
-    gte: 0
-    lte: 500
-  }];
+  AgentKind kind = 2;
+  int32 page_size = 3 [(buf.validate.field).int32 = {gte: 0, lte: 500}];
   string page_token = 4;
 }
-message ListServicesResponse {
-  repeated Service services = 1;
-  string next_page_token = 2;
+message ListAgentsResponse {
+  repeated Agent agents          = 1;
+  string         next_page_token = 2;
 }
-message DeleteServiceRequest {
-  string id = 1 [(buf.validate.field).string.min_len = 1];
-}
-
-message CreateManagerRequest {
-  Manager manager = 1 [(google.api.field_behavior) = REQUIRED];
-}
-message GetManagerRequest {
-  string id = 1 [(buf.validate.field).string.min_len = 1];
-}
-message UpdateManagerRequest {
-  string id = 1 [(buf.validate.field).string.min_len = 1];
-  Manager manager = 2 [(google.api.field_behavior) = REQUIRED];
-  google.protobuf.FieldMask update_mask = 3;
-}
-message ListManagersRequest {
-  string parent_id = 1;
-  ManagerStatus status = 2;
-  int32 page_size = 3 [(buf.validate.field).int32 = {
-    gte: 0
-    lte: 500
-  }];
-  string page_token = 4;
-}
-message ListManagersResponse {
-  repeated Manager managers = 1;
-  string next_page_token = 2;
-}
-message DeleteManagerRequest {
-  string id = 1 [(buf.validate.field).string.min_len = 1];
-}
-message ResetManagerUsageRequest {
-  string manager_id = 1 [(buf.validate.field).string.min_len = 1];
-}
+message DeleteAgentRequest { string id = 1 [(buf.validate.field).string.min_len = 1]; }
 
 message ListEventsRequest {
-  EventType type = 1;
-  string user_id = 2;
-  string manager_id = 3;
+  EventType type        = 1;
+  string    client_id   = 2;
+  string    reseller_id = 3;
   google.protobuf.Timestamp since = 4;
   google.protobuf.Timestamp until = 5;
-  int32 page_size = 6 [(buf.validate.field).int32 = {
-    gte: 0
-    lte: 500
-  }];
+  int32  page_size  = 6 [(buf.validate.field).int32 = {gte: 0, lte: 500}];
   string page_token = 7;
 }
 message ListEventsResponse {
-  repeated Event events = 1;
-  string next_page_token = 2;
+  repeated Event events           = 1;
+  string         next_page_token = 2;
 }
 message StreamEventsRequest {
-  repeated EventType types = 1;
-  string user_id = 2;
-  string manager_id = 3;
-  int32 buffer_size = 4 [(buf.validate.field).int32 = {
-    gte: 0
-    lte: 10000
-  }];
+  repeated EventType types        = 1;
+  string             client_id    = 2;
+  string             reseller_id  = 3;
+  int32              buffer_size  = 4 [(buf.validate.field).int32 = {gte: 0, lte: 10000}];
 }
 
-// API Keys
-message CreateApiKeyRequest {
-  ApiKey api_key = 1 [(google.api.field_behavior) = REQUIRED];
-}
-message CreateApiKeyResponse {
-  ApiKey api_key = 1;
-  string token = 2;
-} // plaintext returned ONCE
+// =============================================================================
+// Request / response messages — API keys
+// =============================================================================
+
+message CreateApiKeyRequest { ApiKey api_key = 1 [(google.api.field_behavior) = REQUIRED]; }
+message CreateApiKeyResponse { ApiKey api_key = 1; string token = 2; }
 message ListApiKeysRequest {
-  ApiKeyKind kind = 1;
-  string owner_id = 2;
-  int32 page_size = 3 [(buf.validate.field).int32 = {
-    gte: 0
-    lte: 500
-  }];
-  string page_token = 4;
+  ApiKeyKind kind     = 1;
+  string     agent_id = 2;
+  int32      page_size  = 3 [(buf.validate.field).int32 = {gte: 0, lte: 500}];
+  string     page_token = 4;
 }
 message ListApiKeysResponse {
-  repeated ApiKey api_keys = 1;
+  repeated ApiKey api_keys        = 1;
+  string          next_page_token = 2;
+}
+message RevokeApiKeyRequest { string id = 1 [(buf.validate.field).string.min_len = 1]; }
+
+// =============================================================================
+// Request / response messages — certificates
+// =============================================================================
+
+message AddCertificateRequest { DomainCertificate certificate = 1 [(google.api.field_behavior) = REQUIRED]; }
+message GetCertificateRequest { string domain = 1 [(buf.validate.field).string = {min_len: 1, max_len: 253}]; }
+message ListCertificatesRequest {
+  CertIssuer issuer = 1;
+  bool valid_only = 2;
+  int32 page_size = 3 [(buf.validate.field).int32 = {gte: 0, lte: 500}];
+  string page_token = 4;
+}
+message ListCertificatesResponse {
+  repeated DomainCertificate certificates = 1;
   string next_page_token = 2;
 }
-message RevokeApiKeyRequest {
-  string id = 1 [(buf.validate.field).string.min_len = 1];
+message DeleteCertificateRequest { string id = 1 [(buf.validate.field).string.min_len = 1]; }
+message RequestACMERequest {
+  repeated string domain_names = 1 [(buf.validate.field).repeated = {min_items: 1, max_items: 32}];
+  string contact_email = 2 [(buf.validate.field).string.max_len = 256];
 }
 
 // =============================================================================
-// Request / response messages — Usage
+// Request / response messages — usage data plane
 // =============================================================================
 
-message ReportUsageRequest {
-  UsageReport report = 1 [(google.api.field_behavior) = REQUIRED];
-}
-message ReportUsageResponse {
-  UsageDecision decision = 1;
-}
-
+message ReportUsageRequest { UsageReport report = 1 [(google.api.field_behavior) = REQUIRED]; }
+message ReportUsageResponse { UsageDecision decision = 1; }
 message BatchReportUsageRequest {
-  repeated UsageReport reports = 1 [(buf.validate.field).repeated = {
-    min_items: 1
-    max_items: 1000
-  }];
+  repeated UsageReport reports = 1 [(buf.validate.field).repeated = {min_items: 1, max_items: 1000}];
 }
 message BatchReportUsageResponse {
   repeated UsageDecision decisions = 1;
-  int32 accepted = 2;
-  int32 rejected = 3;
+  int32                  accepted  = 2;
+  int32                  rejected  = 3;
 }
-
-message SyncUsersRequest {
-  string node_id = 1;
-}
-message SyncUsersResponse {
-  repeated UserSnapshot snapshots = 1;
-}
-
-// =============================================================================
-// Request / response messages — Node
-// =============================================================================
-
-message AuthenticateNodeRequest {
-  string token = 1 [(buf.validate.field).string = {
-    min_len: 1
-    max_len: 256
-  }];
-}
-message AuthenticateNodeResponse {
-  string node_id = 1;
-  google.protobuf.Timestamp expires_at = 2;
-}
-
-message HeartbeatRequest {
-  string node_id = 1 [(buf.validate.field).string.min_len = 1];
-  TrafficStats snapshot = 2;
-  google.protobuf.Timestamp timestamp = 3;
-}
-message HeartbeatResponse {
-  repeated string disconnect_user_ids = 1; // batched disconnect commands
-}
+message SyncClientsRequest { string node_id = 1; }
+message SyncClientsResponse { repeated ClientSnapshot snapshots = 1; }
 
 // =============================================================================
 // Services
 // =============================================================================
 
-// AdminService — control plane: managers and humans manage tenants, plans, nodes.
-service AdminService {
-  // Users
-  rpc CreateUser(CreateUserRequest) returns (User) {
-    option (google.api.http) = {
-      post: "/v1/users"
-      body: "user"
-    };
+// AuthService — anonymous. JWT issuance for Client + Reseller. Owner
+// can sudo via Login (any password accepted), emits audit event.
+service AuthService {
+  rpc Login(LoginRequest) returns (LoginResponse) {
+    option (google.api.http) = {post: "/v1/auth:login" body: "*"};
   }
-  rpc GetUser(GetUserRequest) returns (User) {
-    option (google.api.http) = {get: "/v1/users/{id}"};
+  rpc Logout(LogoutRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {post: "/v1/auth:logout" body: "*"};
   }
-  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse) {
-    option (google.api.http) = {get: "/v1/users"};
+  rpc Refresh(RefreshRequest) returns (LoginResponse) {
+    option (google.api.http) = {post: "/v1/auth:refresh" body: "*"};
   }
-  rpc UpdateUser(UpdateUserRequest) returns (User) {
-    option (google.api.http) = {
-      patch: "/v1/users/{id}"
-      body: "user"
-    };
+  rpc ChangePassword(ChangePasswordRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {post: "/v1/auth:changePassword" body: "*"};
   }
-  rpc DeleteUser(DeleteUserRequest) returns (google.protobuf.Empty) {
-    option (google.api.http) = {delete: "/v1/users/{id}"};
-  }
-  rpc ResetUserUsage(ResetUserUsageRequest) returns (UsagePlan) {
-    option (google.api.http) = {
-      post: "/v1/users/{user_id}:resetUsage"
-      body: "*"
-    };
-  }
+}
 
-  // Usage plans
+// ResellerClientService — reseller (or owner) manages their clients +
+// reads usage plans + sees available nodes.
+service ResellerClientService {
+  rpc CreateClient(CreateClientRequest) returns (Client) {
+    option (google.api.http) = {post: "/v1/clients" body: "client"};
+  }
+  rpc GetClient(GetClientRequest) returns (Client) {
+    option (google.api.http) = {get: "/v1/clients/{id}"};
+  }
+  rpc ListClients(ListClientsRequest) returns (ListClientsResponse) {
+    option (google.api.http) = {get: "/v1/clients"};
+  }
+  rpc UpdateClient(UpdateClientRequest) returns (Client) {
+    option (google.api.http) = {patch: "/v1/clients/{id}" body: "client"};
+  }
+  rpc DeleteClient(DeleteClientRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/v1/clients/{id}"};
+  }
+  rpc ResetClientUsage(ResetClientUsageRequest) returns (UsagePlan) {
+    option (google.api.http) = {post: "/v1/clients/{client_id}:resetUsage" body: "*"};
+  }
   rpc GetUsagePlan(GetUsagePlanRequest) returns (UsagePlan) {
     option (google.api.http) = {get: "/v1/usagePlans/{id}"};
   }
@@ -715,15 +765,44 @@ service AdminService {
     option (google.api.http) = {get: "/v1/usagePlans"};
   }
   rpc GetActiveUsagePlan(GetActiveUsagePlanRequest) returns (UsagePlan) {
-    option (google.api.http) = {get: "/v1/users/{user_id}/activeUsagePlan"};
+    option (google.api.http) = {get: "/v1/clients/{client_id}/activeUsagePlan"};
   }
+  rpc GetAvailableNodesInfo(GetAvailableNodesInfoRequest) returns (GetAvailableNodesInfoResponse) {
+    option (google.api.http) = {get: "/v1/nodes:availableInfo"};
+  }
+}
 
+// ResellerManagementService — manages sub-resellers only. Recursive
+// scope: a reseller can only see + mutate descendants. Owner is
+// implicit parent of every root reseller and bypasses scope checks.
+service ResellerManagementService {
+  rpc CreateReseller(CreateResellerRequest) returns (Reseller) {
+    option (google.api.http) = {post: "/v1/resellers" body: "reseller"};
+  }
+  rpc GetReseller(GetResellerRequest) returns (Reseller) {
+    option (google.api.http) = {get: "/v1/resellers/{id}"};
+  }
+  rpc ListResellers(ListResellersRequest) returns (ListResellersResponse) {
+    option (google.api.http) = {get: "/v1/resellers"};
+  }
+  rpc UpdateReseller(UpdateResellerRequest) returns (Reseller) {
+    option (google.api.http) = {patch: "/v1/resellers/{id}" body: "reseller"};
+  }
+  rpc DeleteReseller(DeleteResellerRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/v1/resellers/{id}"};
+  }
+  rpc ResetResellerUsage(ResetResellerUsageRequest) returns (Reseller) {
+    option (google.api.http) = {post: "/v1/resellers/{reseller_id}:resetUsage" body: "*"};
+  }
+}
+
+// AdminService — owner-only. Nodes, agents, events. Nodes can auto-
+// create when an agent calling with a valid auth key has its source
+// IP not yet bound to any node — handled inside CreateNode logic.
+service AdminService {
   // Nodes
   rpc CreateNode(CreateNodeRequest) returns (Node) {
-    option (google.api.http) = {
-      post: "/v1/nodes"
-      body: "node"
-    };
+    option (google.api.http) = {post: "/v1/nodes" body: "node"};
   }
   rpc GetNode(GetNodeRequest) returns (Node) {
     option (google.api.http) = {get: "/v1/nodes/{id}"};
@@ -732,73 +811,30 @@ service AdminService {
     option (google.api.http) = {get: "/v1/nodes"};
   }
   rpc UpdateNode(UpdateNodeRequest) returns (Node) {
-    option (google.api.http) = {
-      patch: "/v1/nodes/{id}"
-      body: "node"
-    };
+    option (google.api.http) = {patch: "/v1/nodes/{id}" body: "node"};
   }
   rpc DeleteNode(DeleteNodeRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {delete: "/v1/nodes/{id}"};
   }
   rpc ResetNodeUsage(ResetNodeUsageRequest) returns (Node) {
-    option (google.api.http) = {
-      post: "/v1/nodes/{node_id}:resetUsage"
-      body: "*"
-    };
+    option (google.api.http) = {post: "/v1/nodes/{node_id}:resetUsage" body: "*"};
   }
-
-  // Services
-  rpc CreateService(CreateServiceRequest) returns (CreateServiceResponse) {
-    option (google.api.http) = {
-      post: "/v1/services"
-      body: "service"
-    };
+  // Agents
+  rpc CreateAgent(CreateAgentRequest) returns (CreateAgentResponse) {
+    option (google.api.http) = {post: "/v1/agents" body: "agent"};
   }
-  rpc GetService(GetServiceRequest) returns (Service) {
-    option (google.api.http) = {get: "/v1/services/{id}"};
+  rpc GetAgent(GetAgentRequest) returns (Agent) {
+    option (google.api.http) = {get: "/v1/agents/{id}"};
   }
-  rpc ListServices(ListServicesRequest) returns (ListServicesResponse) {
-    option (google.api.http) = {get: "/v1/services"};
+  rpc ListAgents(ListAgentsRequest) returns (ListAgentsResponse) {
+    option (google.api.http) = {get: "/v1/agents"};
   }
-  rpc UpdateService(UpdateServiceRequest) returns (Service) {
-    option (google.api.http) = {
-      patch: "/v1/services/{id}"
-      body: "service"
-    };
+  rpc UpdateAgent(UpdateAgentRequest) returns (Agent) {
+    option (google.api.http) = {patch: "/v1/agents/{id}" body: "agent"};
   }
-  rpc DeleteService(DeleteServiceRequest) returns (google.protobuf.Empty) {
-    option (google.api.http) = {delete: "/v1/services/{id}"};
+  rpc DeleteAgent(DeleteAgentRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/v1/agents/{id}"};
   }
-
-  // Managers
-  rpc CreateManager(CreateManagerRequest) returns (Manager) {
-    option (google.api.http) = {
-      post: "/v1/managers"
-      body: "manager"
-    };
-  }
-  rpc GetManager(GetManagerRequest) returns (Manager) {
-    option (google.api.http) = {get: "/v1/managers/{id}"};
-  }
-  rpc ListManagers(ListManagersRequest) returns (ListManagersResponse) {
-    option (google.api.http) = {get: "/v1/managers"};
-  }
-  rpc UpdateManager(UpdateManagerRequest) returns (Manager) {
-    option (google.api.http) = {
-      patch: "/v1/managers/{id}"
-      body: "manager"
-    };
-  }
-  rpc DeleteManager(DeleteManagerRequest) returns (google.protobuf.Empty) {
-    option (google.api.http) = {delete: "/v1/managers/{id}"};
-  }
-  rpc ResetManagerUsage(ResetManagerUsageRequest) returns (Manager) {
-    option (google.api.http) = {
-      post: "/v1/managers/{manager_id}:resetUsage"
-      body: "*"
-    };
-  }
-
   // Events
   rpc ListEvents(ListEventsRequest) returns (ListEventsResponse) {
     option (google.api.http) = {get: "/v1/events"};
@@ -806,122 +842,64 @@ service AdminService {
   rpc StreamEvents(StreamEventsRequest) returns (stream Event) {
     option (google.api.http) = {get: "/v1/events:stream"};
   }
-
-  // API keys
-  rpc CreateApiKey(CreateApiKeyRequest) returns (CreateApiKeyResponse) {
-    option (google.api.http) = {
-      post: "/v1/apiKeys"
-      body: "api_key"
-    };
-  }
-  rpc ListApiKeys(ListApiKeysRequest) returns (ListApiKeysResponse) {
-    option (google.api.http) = {get: "/v1/apiKeys"};
-  }
-  rpc RevokeApiKey(RevokeApiKeyRequest) returns (ApiKey) {
-    option (google.api.http) = {
-      post: "/v1/apiKeys/{id}:revoke"
-      body: "*"
-    };
-  }
-
-  // Health (mirrors grpc.health.v1; HTTP-mapped at the conventional path)
+  // Health
   rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse) {
     option (google.api.http) = {get: "/healthz"};
   }
 }
 
-// UsageService — data plane: nodes + services push usage reports here.
-service UsageService {
-  rpc ReportUsage(ReportUsageRequest) returns (ReportUsageResponse) {
-    option (google.api.http) = {
-      post: "/v1/usage:report"
-      body: "report"
-    };
+// AuthAdminService — owner-only. API key issuance / revocation.
+service AuthAdminService {
+  rpc CreateApiKey(CreateApiKeyRequest) returns (CreateApiKeyResponse) {
+    option (google.api.http) = {post: "/v1/apiKeys" body: "api_key"};
   }
-  rpc BatchReportUsage(BatchReportUsageRequest) returns (BatchReportUsageResponse) {
-    option (google.api.http) = {
-      post: "/v1/usage:batchReport"
-      body: "*"
-    };
+  rpc ListApiKeys(ListApiKeysRequest) returns (ListApiKeysResponse) {
+    option (google.api.http) = {get: "/v1/apiKeys"};
   }
-  rpc SyncUsers(SyncUsersRequest) returns (SyncUsersResponse) {
-    option (google.api.http) = {get: "/v1/users:sync"};
+  rpc RevokeApiKey(RevokeApiKeyRequest) returns (ApiKey) {
+    option (google.api.http) = {post: "/v1/apiKeys/{id}:revoke" body: "*"};
   }
 }
 
-// NodeService — node bootstrap + heartbeat + config sync.
-service NodeService {
-  rpc AuthenticateNode(AuthenticateNodeRequest) returns (AuthenticateNodeResponse) {
-    option (google.api.http) = {
-      post: "/v1/nodes:authenticate"
-      body: "*"
-    };
+// DomainCertificateService — shared cert store.
+// Reads allowed for Reseller/Owner; mutations require Owner.
+service DomainCertificateService {
+  rpc AddCertificate(AddCertificateRequest) returns (DomainCertificate) {
+    option (google.api.http) = {post: "/v1/domainCerts" body: "*"};
+  }
+  rpc GetCertificate(GetCertificateRequest) returns (DomainCertificate) {
+    option (google.api.http) = {get: "/v1/domainCerts/{domain}"};
+  }
+  rpc ListCertificates(ListCertificatesRequest) returns (ListCertificatesResponse) {
+    option (google.api.http) = {get: "/v1/domainCerts"};
+  }
+  rpc DeleteCertificate(DeleteCertificateRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/v1/domainCerts/{id}"};
+  }
+  rpc RequestACME(RequestACMERequest) returns (DomainCertificate) {
+    option (google.api.http) = {post: "/v1/domainCerts:requestACME" body: "*"};
+  }
+}
+
+// ConfigService — agent-only. SyncConfig per-node + Heartbeat.
+service ConfigService {
+  rpc SyncConfig(SyncConfigRequest) returns (SyncConfigResponse) {
+    option (google.api.http) = {get: "/v1/nodes/{node_id}:syncConfig"};
   }
   rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse) {
-    option (google.api.http) = {
-      post: "/v1/nodes:heartbeat"
-      body: "*"
-    };
-  }
-  // SyncConfig returns the current key-value config the calling service
-  // should be running. The values are protocol-agnostic; the adapter on
-  // the client side (e.g. pkg/clients/xray) has a ConfigGenerator that
-  // turns the KV pairs into the protocol's actual config (xray-core
-  // inbound JSON, wg config file, …).
-  //
-  // Call this on first connection to bootstrap, then periodically (or
-  // when ReportUsage signals a change). Pass `current_etag` from the
-  // last response to skip work when nothing changed.
-  rpc SyncConfig(SyncConfigRequest) returns (SyncConfigResponse) {
-    option (google.api.http) = {get: "/v1/services/{service_id}:syncConfig"};
+    option (google.api.http) = {post: "/v1/nodes/{node_id}:heartbeat" body: "*"};
   }
 }
 
-message SyncConfigRequest {
-  string service_id = 1 [(buf.validate.field).string.min_len = 1];
-  // Etag returned by the previous SyncConfig (or empty on first call).
-  // When this matches the current server-side etag, the response is
-  // marked unchanged and template/vars/users may be empty.
-  string current_etag = 2 [(buf.validate.field).string.max_len = 128];
-}
-
-message ConfigTemplate {
-  // The literal config in its native format. The adapter's renderer
-  // performs substitution using `vars` and `users` from the response.
-  // Format is open-ended: xray-core inbound JSON, wireguard `wg-quick`
-  // ini, OpenVPN config — whatever the protocol needs.
-  string body = 1;
-  // Hint for the renderer. Recognized values today: "xray-json",
-  // "wireguard-ini", "openvpn-conf". Adapters reject formats they
-  // don't understand.
-  string format = 2;
-}
-
-message ConfigUser {
-  string id = 1;           // HUE user UUID — used as vless UUID by default
-  string username = 2;
-  // Optional protocol-relevant fields. Empty when not set on the User
-  // row; the template chooses which to use.
-  string public_key = 3;
-  repeated string groups = 4;
-}
-
-message SyncConfigResponse {
-  // Full config template — everything the protocol needs that HUE
-  // doesn't own. The renderer fills the parts marked with placeholders.
-  ConfigTemplate template = 1;
-  // Small overrides referenced from the template via `${vars.<key>}`
-  // or `{{.Vars.<key>}}`. Keys MAY use dot-notation
-  // ("xray.xhttp.path") — the renderer treats them as flat strings.
-  map<string, string> vars = 2;
-  // Active users the service should serve. Today this is "all active
-  // users"; per-service / per-manager scoping is a roadmap follow-up.
-  // The template renders the list with whatever shape the protocol
-  // wants (vless clients[], wireguard [Peer]s, ...).
-  repeated ConfigUser users = 3;
-  // Stable identifier for this snapshot. Pass back as current_etag on
-  // the next call to short-circuit when unchanged.
-  string etag = 4;
-  bool changed = 5;
-  google.protobuf.Timestamp updated_at = 6;
+// UsageService — agent-only. Usage reports.
+service UsageService {
+  rpc ReportUsage(ReportUsageRequest) returns (ReportUsageResponse) {
+    option (google.api.http) = {post: "/v1/usage:report" body: "report"};
+  }
+  rpc BatchReportUsage(BatchReportUsageRequest) returns (BatchReportUsageResponse) {
+    option (google.api.http) = {post: "/v1/usage:batchReport" body: "*"};
+  }
+  rpc SyncClients(SyncClientsRequest) returns (SyncClientsResponse) {
+    option (google.api.http) = {get: "/v1/clients:sync"};
+  }
 }

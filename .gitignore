@@ -42,6 +42,9 @@ third_party/
 .air.toml.local
 tmp/
 
+# E2E binary cache (xray-core downloaded by `make e2e-deps`)
+test/e2e/testdata/xray/
+
 # Editor / OS
 .DS_Store
 .idea/

@@ -65,9 +65,9 @@ func UpdatedAt(v time.Time) predicate.ApiKey {
 	return predicate.ApiKey(sql.FieldEQ(FieldUpdatedAt, v))
 }
 
-// OwnerID applies equality check predicate on the "owner_id" field. It's identical to OwnerIDEQ.
-func OwnerID(v string) predicate.ApiKey {
-	return predicate.ApiKey(sql.FieldEQ(FieldOwnerID, v))
+// AgentID applies equality check predicate on the "agent_id" field. It's identical to AgentIDEQ.
+func AgentID(v string) predicate.ApiKey {
+	return predicate.ApiKey(sql.FieldEQ(FieldAgentID, v))
 }
 
 // Name applies equality check predicate on the "name" field. It's identical to NameEQ.
@@ -93,6 +93,11 @@ func LastUsedAt(v time.Time) predicate.ApiKey {
 // RevokedAt applies equality check predicate on the "revoked_at" field. It's identical to RevokedAtEQ.
 func RevokedAt(v time.Time) predicate.ApiKey {
 	return predicate.ApiKey(sql.FieldEQ(FieldRevokedAt, v))
+}
+
+// ExpiresAt applies equality check predicate on the "expires_at" field. It's identical to ExpiresAtEQ.
+func ExpiresAt(v time.Time) predicate.ApiKey {
+	return predicate.ApiKey(sql.FieldEQ(FieldExpiresAt, v))
 }
 
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
@@ -195,69 +200,79 @@ func KindNotIn(vs ...Kind) predicate.ApiKey {
 	return predicate.ApiKey(sql.FieldNotIn(FieldKind, vs...))
 }
 
-// OwnerIDEQ applies the EQ predicate on the "owner_id" field.
-func OwnerIDEQ(v string) predicate.ApiKey {
-	return predicate.ApiKey(sql.FieldEQ(FieldOwnerID, v))
+// AgentIDEQ applies the EQ predicate on the "agent_id" field.
+func AgentIDEQ(v string) predicate.ApiKey {
+	return predicate.ApiKey(sql.FieldEQ(FieldAgentID, v))
 }
 
-// OwnerIDNEQ applies the NEQ predicate on the "owner_id" field.
-func OwnerIDNEQ(v string) predicate.ApiKey {
-	return predicate.ApiKey(sql.FieldNEQ(FieldOwnerID, v))
+// AgentIDNEQ applies the NEQ predicate on the "agent_id" field.
+func AgentIDNEQ(v string) predicate.ApiKey {
+	return predicate.ApiKey(sql.FieldNEQ(FieldAgentID, v))
 }
 
-// OwnerIDIn applies the In predicate on the "owner_id" field.
-func OwnerIDIn(vs ...string) predicate.ApiKey {
-	return predicate.ApiKey(sql.FieldIn(FieldOwnerID, vs...))
+// AgentIDIn applies the In predicate on the "agent_id" field.
+func AgentIDIn(vs ...string) predicate.ApiKey {
+	return predicate.ApiKey(sql.FieldIn(FieldAgentID, vs...))
 }
 
-// OwnerIDNotIn applies the NotIn predicate on the "owner_id" field.
-func OwnerIDNotIn(vs ...string) predicate.ApiKey {
-	return predicate.ApiKey(sql.FieldNotIn(FieldOwnerID, vs...))
+// AgentIDNotIn applies the NotIn predicate on the "agent_id" field.
+func AgentIDNotIn(vs ...string) predicate.ApiKey {
+	return predicate.ApiKey(sql.FieldNotIn(FieldAgentID, vs...))
 }
 
-// OwnerIDGT applies the GT predicate on the "owner_id" field.
-func OwnerIDGT(v string) predicate.ApiKey {
-	return predicate.ApiKey(sql.FieldGT(FieldOwnerID, v))
+// AgentIDGT applies the GT predicate on the "agent_id" field.
+func AgentIDGT(v string) predicate.ApiKey {
+	return predicate.ApiKey(sql.FieldGT(FieldAgentID, v))
 }
 
-// OwnerIDGTE applies the GTE predicate on the "owner_id" field.
-func OwnerIDGTE(v string) predicate.ApiKey {
-	return predicate.ApiKey(sql.FieldGTE(FieldOwnerID, v))
+// AgentIDGTE applies the GTE predicate on the "agent_id" field.
+func AgentIDGTE(v string) predicate.ApiKey {
+	return predicate.ApiKey(sql.FieldGTE(FieldAgentID, v))
 }
 
-// OwnerIDLT applies the LT predicate on the "owner_id" field.
-func OwnerIDLT(v string) predicate.ApiKey {
-	return predicate.ApiKey(sql.FieldLT(FieldOwnerID, v))
+// AgentIDLT applies the LT predicate on the "agent_id" field.
+func AgentIDLT(v string) predicate.ApiKey {
+	return predicate.ApiKey(sql.FieldLT(FieldAgentID, v))
 }
 
-// OwnerIDLTE applies the LTE predicate on the "owner_id" field.
-func OwnerIDLTE(v string) predicate.ApiKey {
-	return predicate.ApiKey(sql.FieldLTE(FieldOwnerID, v))
+// AgentIDLTE applies the LTE predicate on the "agent_id" field.
+func AgentIDLTE(v string) predicate.ApiKey {
+	return predicate.ApiKey(sql.FieldLTE(FieldAgentID, v))
 }
 
-// OwnerIDContains applies the Contains predicate on the "owner_id" field.
-func OwnerIDContains(v string) predicate.ApiKey {
-	return predicate.ApiKey(sql.FieldContains(FieldOwnerID, v))
+// AgentIDContains applies the Contains predicate on the "agent_id" field.
+func AgentIDContains(v string) predicate.ApiKey {
+	return predicate.ApiKey(sql.FieldContains(FieldAgentID, v))
 }
 
-// OwnerIDHasPrefix applies the HasPrefix predicate on the "owner_id" field.
-func OwnerIDHasPrefix(v string) predicate.ApiKey {
-	return predicate.ApiKey(sql.FieldHasPrefix(FieldOwnerID, v))
+// AgentIDHasPrefix applies the HasPrefix predicate on the "agent_id" field.
+func AgentIDHasPrefix(v string) predicate.ApiKey {
+	return predicate.ApiKey(sql.FieldHasPrefix(FieldAgentID, v))
 }
 
-// OwnerIDHasSuffix applies the HasSuffix predicate on the "owner_id" field.
-func OwnerIDHasSuffix(v string) predicate.ApiKey {
-	return predicate.ApiKey(sql.FieldHasSuffix(FieldOwnerID, v))
+// AgentIDHasSuffix applies the HasSuffix predicate on the "agent_id" field.
+func AgentIDHasSuffix(v string) predicate.ApiKey {
+	return predicate.ApiKey(sql.FieldHasSuffix(FieldAgentID, v))
 }
 
-// OwnerIDEqualFold applies the EqualFold predicate on the "owner_id" field.
-func OwnerIDEqualFold(v string) predicate.ApiKey {
-	return predicate.ApiKey(sql.FieldEqualFold(FieldOwnerID, v))
+// AgentIDIsNil applies the IsNil predicate on the "agent_id" field.
+func AgentIDIsNil() predicate.ApiKey {
+	return predicate.ApiKey(sql.FieldIsNull(FieldAgentID))
 }
 
-// OwnerIDContainsFold applies the ContainsFold predicate on the "owner_id" field.
-func OwnerIDContainsFold(v string) predicate.ApiKey {
-	return predicate.ApiKey(sql.FieldContainsFold(FieldOwnerID, v))
+// AgentIDNotNil applies the NotNil predicate on the "agent_id" field.
+func AgentIDNotNil() predicate.ApiKey {
+	return predicate.ApiKey(sql.FieldNotNull(FieldAgentID))
+}
+
+// AgentIDEqualFold applies the EqualFold predicate on the "agent_id" field.
+func AgentIDEqualFold(v string) predicate.ApiKey {
+	return predicate.ApiKey(sql.FieldEqualFold(FieldAgentID, v))
+}
+
+// AgentIDContainsFold applies the ContainsFold predicate on the "agent_id" field.
+func AgentIDContainsFold(v string) predicate.ApiKey {
+	return predicate.ApiKey(sql.FieldContainsFold(FieldAgentID, v))
 }
 
 // NameEQ applies the EQ predicate on the "name" field.
@@ -553,6 +568,56 @@ func RevokedAtIsNil() predicate.ApiKey {
 // RevokedAtNotNil applies the NotNil predicate on the "revoked_at" field.
 func RevokedAtNotNil() predicate.ApiKey {
 	return predicate.ApiKey(sql.FieldNotNull(FieldRevokedAt))
+}
+
+// ExpiresAtEQ applies the EQ predicate on the "expires_at" field.
+func ExpiresAtEQ(v time.Time) predicate.ApiKey {
+	return predicate.ApiKey(sql.FieldEQ(FieldExpiresAt, v))
+}
+
+// ExpiresAtNEQ applies the NEQ predicate on the "expires_at" field.
+func ExpiresAtNEQ(v time.Time) predicate.ApiKey {
+	return predicate.ApiKey(sql.FieldNEQ(FieldExpiresAt, v))
+}
+
+// ExpiresAtIn applies the In predicate on the "expires_at" field.
+func ExpiresAtIn(vs ...time.Time) predicate.ApiKey {
+	return predicate.ApiKey(sql.FieldIn(FieldExpiresAt, vs...))
+}
+
+// ExpiresAtNotIn applies the NotIn predicate on the "expires_at" field.
+func ExpiresAtNotIn(vs ...time.Time) predicate.ApiKey {
+	return predicate.ApiKey(sql.FieldNotIn(FieldExpiresAt, vs...))
+}
+
+// ExpiresAtGT applies the GT predicate on the "expires_at" field.
+func ExpiresAtGT(v time.Time) predicate.ApiKey {
+	return predicate.ApiKey(sql.FieldGT(FieldExpiresAt, v))
+}
+
+// ExpiresAtGTE applies the GTE predicate on the "expires_at" field.
+func ExpiresAtGTE(v time.Time) predicate.ApiKey {
+	return predicate.ApiKey(sql.FieldGTE(FieldExpiresAt, v))
+}
+
+// ExpiresAtLT applies the LT predicate on the "expires_at" field.
+func ExpiresAtLT(v time.Time) predicate.ApiKey {
+	return predicate.ApiKey(sql.FieldLT(FieldExpiresAt, v))
+}
+
+// ExpiresAtLTE applies the LTE predicate on the "expires_at" field.
+func ExpiresAtLTE(v time.Time) predicate.ApiKey {
+	return predicate.ApiKey(sql.FieldLTE(FieldExpiresAt, v))
+}
+
+// ExpiresAtIsNil applies the IsNil predicate on the "expires_at" field.
+func ExpiresAtIsNil() predicate.ApiKey {
+	return predicate.ApiKey(sql.FieldIsNull(FieldExpiresAt))
+}
+
+// ExpiresAtNotNil applies the NotNil predicate on the "expires_at" field.
+func ExpiresAtNotNil() predicate.ApiKey {
+	return predicate.ApiKey(sql.FieldNotNull(FieldExpiresAt))
 }
 
 // And groups predicates with the AND operator between them.

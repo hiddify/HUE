@@ -8,21 +8,19 @@ import (
 	"github.com/google/uuid"
 )
 
-// UsagePlan is the per-user quota policy + live counters. A user may have
-// multiple plans over time (history), but only one is active at a time
-// (referenced by User.active_plan_id).
+// UsagePlan is the per-Client quota policy + live counters. A Client
+// may have multiple historical plans; exactly one active at a time
+// (Client.active_plan_id).
 type UsagePlan struct{ ent.Schema }
 
 func (UsagePlan) Mixin() []ent.Mixin { return []ent.Mixin{UUIDMixin{}, TimeMixin{}} }
 
 func (UsagePlan) Fields() []ent.Field {
 	return []ent.Field{
-		field.UUID("user_id", uuid.UUID{}),
-		// Limits in bytes; 0 means unlimited for the dimension.
+		field.UUID("client_id", uuid.UUID{}),
 		field.Int64("total_limit").NonNegative().Default(0),
 		field.Int64("upload_limit").NonNegative().Default(0),
 		field.Int64("download_limit").NonNegative().Default(0),
-		// Live counters.
 		field.Int64("current_total").NonNegative().Default(0),
 		field.Int64("current_upload").NonNegative().Default(0),
 		field.Int64("current_download").NonNegative().Default(0),
@@ -57,17 +55,17 @@ func (UsagePlan) Fields() []ent.Field {
 
 func (UsagePlan) Edges() []ent.Edge {
 	return []ent.Edge{
-		edge.From("user", User.Type).
+		edge.From("subscriber", Subscriber.Type).
 			Ref("usage_plans").
 			Unique().
 			Required().
-			Field("user_id"),
+			Field("client_id"),
 	}
 }
 
 func (UsagePlan) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("user_id"),
+		index.Fields("client_id"),
 		index.Fields("status"),
 		index.Fields("expires_at"),
 	}

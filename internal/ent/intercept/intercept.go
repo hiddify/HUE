@@ -8,16 +8,19 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"github.com/hiddify/hue/internal/ent"
+	"github.com/hiddify/hue/internal/ent/agent"
 	"github.com/hiddify/hue/internal/ent/apikey"
+	"github.com/hiddify/hue/internal/ent/domaincertificate"
 	"github.com/hiddify/hue/internal/ent/event"
-	"github.com/hiddify/hue/internal/ent/manager"
-	"github.com/hiddify/hue/internal/ent/managerplan"
 	"github.com/hiddify/hue/internal/ent/node"
 	"github.com/hiddify/hue/internal/ent/predicate"
-	"github.com/hiddify/hue/internal/ent/service"
+	"github.com/hiddify/hue/internal/ent/refreshtoken"
+	"github.com/hiddify/hue/internal/ent/reseller"
+	"github.com/hiddify/hue/internal/ent/resellerplan"
+	"github.com/hiddify/hue/internal/ent/signingkey"
+	"github.com/hiddify/hue/internal/ent/subscriber"
 	"github.com/hiddify/hue/internal/ent/usageplan"
 	"github.com/hiddify/hue/internal/ent/usagereport"
-	"github.com/hiddify/hue/internal/ent/user"
 )
 
 // The Query interface represents an operation that queries a graph.
@@ -76,6 +79,33 @@ func (f TraverseFunc) Traverse(ctx context.Context, q ent.Query) error {
 	return f(ctx, query)
 }
 
+// The AgentFunc type is an adapter to allow the use of ordinary function as a Querier.
+type AgentFunc func(context.Context, *ent.AgentQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f AgentFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.AgentQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.AgentQuery", q)
+}
+
+// The TraverseAgent type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseAgent func(context.Context, *ent.AgentQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseAgent) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseAgent) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.AgentQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.AgentQuery", q)
+}
+
 // The ApiKeyFunc type is an adapter to allow the use of ordinary function as a Querier.
 type ApiKeyFunc func(context.Context, *ent.ApiKeyQuery) (ent.Value, error)
 
@@ -101,6 +131,33 @@ func (f TraverseApiKey) Traverse(ctx context.Context, q ent.Query) error {
 		return f(ctx, q)
 	}
 	return fmt.Errorf("unexpected query type %T. expect *ent.ApiKeyQuery", q)
+}
+
+// The DomainCertificateFunc type is an adapter to allow the use of ordinary function as a Querier.
+type DomainCertificateFunc func(context.Context, *ent.DomainCertificateQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f DomainCertificateFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.DomainCertificateQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.DomainCertificateQuery", q)
+}
+
+// The TraverseDomainCertificate type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseDomainCertificate func(context.Context, *ent.DomainCertificateQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseDomainCertificate) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseDomainCertificate) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.DomainCertificateQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.DomainCertificateQuery", q)
 }
 
 // The EventFunc type is an adapter to allow the use of ordinary function as a Querier.
@@ -130,60 +187,6 @@ func (f TraverseEvent) Traverse(ctx context.Context, q ent.Query) error {
 	return fmt.Errorf("unexpected query type %T. expect *ent.EventQuery", q)
 }
 
-// The ManagerFunc type is an adapter to allow the use of ordinary function as a Querier.
-type ManagerFunc func(context.Context, *ent.ManagerQuery) (ent.Value, error)
-
-// Query calls f(ctx, q).
-func (f ManagerFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
-	if q, ok := q.(*ent.ManagerQuery); ok {
-		return f(ctx, q)
-	}
-	return nil, fmt.Errorf("unexpected query type %T. expect *ent.ManagerQuery", q)
-}
-
-// The TraverseManager type is an adapter to allow the use of ordinary function as Traverser.
-type TraverseManager func(context.Context, *ent.ManagerQuery) error
-
-// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
-func (f TraverseManager) Intercept(next ent.Querier) ent.Querier {
-	return next
-}
-
-// Traverse calls f(ctx, q).
-func (f TraverseManager) Traverse(ctx context.Context, q ent.Query) error {
-	if q, ok := q.(*ent.ManagerQuery); ok {
-		return f(ctx, q)
-	}
-	return fmt.Errorf("unexpected query type %T. expect *ent.ManagerQuery", q)
-}
-
-// The ManagerPlanFunc type is an adapter to allow the use of ordinary function as a Querier.
-type ManagerPlanFunc func(context.Context, *ent.ManagerPlanQuery) (ent.Value, error)
-
-// Query calls f(ctx, q).
-func (f ManagerPlanFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
-	if q, ok := q.(*ent.ManagerPlanQuery); ok {
-		return f(ctx, q)
-	}
-	return nil, fmt.Errorf("unexpected query type %T. expect *ent.ManagerPlanQuery", q)
-}
-
-// The TraverseManagerPlan type is an adapter to allow the use of ordinary function as Traverser.
-type TraverseManagerPlan func(context.Context, *ent.ManagerPlanQuery) error
-
-// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
-func (f TraverseManagerPlan) Intercept(next ent.Querier) ent.Querier {
-	return next
-}
-
-// Traverse calls f(ctx, q).
-func (f TraverseManagerPlan) Traverse(ctx context.Context, q ent.Query) error {
-	if q, ok := q.(*ent.ManagerPlanQuery); ok {
-		return f(ctx, q)
-	}
-	return fmt.Errorf("unexpected query type %T. expect *ent.ManagerPlanQuery", q)
-}
-
 // The NodeFunc type is an adapter to allow the use of ordinary function as a Querier.
 type NodeFunc func(context.Context, *ent.NodeQuery) (ent.Value, error)
 
@@ -211,31 +214,139 @@ func (f TraverseNode) Traverse(ctx context.Context, q ent.Query) error {
 	return fmt.Errorf("unexpected query type %T. expect *ent.NodeQuery", q)
 }
 
-// The ServiceFunc type is an adapter to allow the use of ordinary function as a Querier.
-type ServiceFunc func(context.Context, *ent.ServiceQuery) (ent.Value, error)
+// The RefreshTokenFunc type is an adapter to allow the use of ordinary function as a Querier.
+type RefreshTokenFunc func(context.Context, *ent.RefreshTokenQuery) (ent.Value, error)
 
 // Query calls f(ctx, q).
-func (f ServiceFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
-	if q, ok := q.(*ent.ServiceQuery); ok {
+func (f RefreshTokenFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.RefreshTokenQuery); ok {
 		return f(ctx, q)
 	}
-	return nil, fmt.Errorf("unexpected query type %T. expect *ent.ServiceQuery", q)
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.RefreshTokenQuery", q)
 }
 
-// The TraverseService type is an adapter to allow the use of ordinary function as Traverser.
-type TraverseService func(context.Context, *ent.ServiceQuery) error
+// The TraverseRefreshToken type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseRefreshToken func(context.Context, *ent.RefreshTokenQuery) error
 
 // Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
-func (f TraverseService) Intercept(next ent.Querier) ent.Querier {
+func (f TraverseRefreshToken) Intercept(next ent.Querier) ent.Querier {
 	return next
 }
 
 // Traverse calls f(ctx, q).
-func (f TraverseService) Traverse(ctx context.Context, q ent.Query) error {
-	if q, ok := q.(*ent.ServiceQuery); ok {
+func (f TraverseRefreshToken) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.RefreshTokenQuery); ok {
 		return f(ctx, q)
 	}
-	return fmt.Errorf("unexpected query type %T. expect *ent.ServiceQuery", q)
+	return fmt.Errorf("unexpected query type %T. expect *ent.RefreshTokenQuery", q)
+}
+
+// The ResellerFunc type is an adapter to allow the use of ordinary function as a Querier.
+type ResellerFunc func(context.Context, *ent.ResellerQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f ResellerFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.ResellerQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.ResellerQuery", q)
+}
+
+// The TraverseReseller type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseReseller func(context.Context, *ent.ResellerQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseReseller) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseReseller) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.ResellerQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.ResellerQuery", q)
+}
+
+// The ResellerPlanFunc type is an adapter to allow the use of ordinary function as a Querier.
+type ResellerPlanFunc func(context.Context, *ent.ResellerPlanQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f ResellerPlanFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.ResellerPlanQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.ResellerPlanQuery", q)
+}
+
+// The TraverseResellerPlan type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseResellerPlan func(context.Context, *ent.ResellerPlanQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseResellerPlan) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseResellerPlan) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.ResellerPlanQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.ResellerPlanQuery", q)
+}
+
+// The SigningKeyFunc type is an adapter to allow the use of ordinary function as a Querier.
+type SigningKeyFunc func(context.Context, *ent.SigningKeyQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f SigningKeyFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.SigningKeyQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.SigningKeyQuery", q)
+}
+
+// The TraverseSigningKey type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseSigningKey func(context.Context, *ent.SigningKeyQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseSigningKey) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseSigningKey) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.SigningKeyQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.SigningKeyQuery", q)
+}
+
+// The SubscriberFunc type is an adapter to allow the use of ordinary function as a Querier.
+type SubscriberFunc func(context.Context, *ent.SubscriberQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f SubscriberFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.SubscriberQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.SubscriberQuery", q)
+}
+
+// The TraverseSubscriber type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseSubscriber func(context.Context, *ent.SubscriberQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseSubscriber) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseSubscriber) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.SubscriberQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.SubscriberQuery", q)
 }
 
 // The UsagePlanFunc type is an adapter to allow the use of ordinary function as a Querier.
@@ -292,54 +403,33 @@ func (f TraverseUsageReport) Traverse(ctx context.Context, q ent.Query) error {
 	return fmt.Errorf("unexpected query type %T. expect *ent.UsageReportQuery", q)
 }
 
-// The UserFunc type is an adapter to allow the use of ordinary function as a Querier.
-type UserFunc func(context.Context, *ent.UserQuery) (ent.Value, error)
-
-// Query calls f(ctx, q).
-func (f UserFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
-	if q, ok := q.(*ent.UserQuery); ok {
-		return f(ctx, q)
-	}
-	return nil, fmt.Errorf("unexpected query type %T. expect *ent.UserQuery", q)
-}
-
-// The TraverseUser type is an adapter to allow the use of ordinary function as Traverser.
-type TraverseUser func(context.Context, *ent.UserQuery) error
-
-// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
-func (f TraverseUser) Intercept(next ent.Querier) ent.Querier {
-	return next
-}
-
-// Traverse calls f(ctx, q).
-func (f TraverseUser) Traverse(ctx context.Context, q ent.Query) error {
-	if q, ok := q.(*ent.UserQuery); ok {
-		return f(ctx, q)
-	}
-	return fmt.Errorf("unexpected query type %T. expect *ent.UserQuery", q)
-}
-
 // NewQuery returns the generic Query interface for the given typed query.
 func NewQuery(q ent.Query) (Query, error) {
 	switch q := q.(type) {
+	case *ent.AgentQuery:
+		return &query[*ent.AgentQuery, predicate.Agent, agent.OrderOption]{typ: ent.TypeAgent, tq: q}, nil
 	case *ent.ApiKeyQuery:
 		return &query[*ent.ApiKeyQuery, predicate.ApiKey, apikey.OrderOption]{typ: ent.TypeApiKey, tq: q}, nil
+	case *ent.DomainCertificateQuery:
+		return &query[*ent.DomainCertificateQuery, predicate.DomainCertificate, domaincertificate.OrderOption]{typ: ent.TypeDomainCertificate, tq: q}, nil
 	case *ent.EventQuery:
 		return &query[*ent.EventQuery, predicate.Event, event.OrderOption]{typ: ent.TypeEvent, tq: q}, nil
-	case *ent.ManagerQuery:
-		return &query[*ent.ManagerQuery, predicate.Manager, manager.OrderOption]{typ: ent.TypeManager, tq: q}, nil
-	case *ent.ManagerPlanQuery:
-		return &query[*ent.ManagerPlanQuery, predicate.ManagerPlan, managerplan.OrderOption]{typ: ent.TypeManagerPlan, tq: q}, nil
 	case *ent.NodeQuery:
 		return &query[*ent.NodeQuery, predicate.Node, node.OrderOption]{typ: ent.TypeNode, tq: q}, nil
-	case *ent.ServiceQuery:
-		return &query[*ent.ServiceQuery, predicate.Service, service.OrderOption]{typ: ent.TypeService, tq: q}, nil
+	case *ent.RefreshTokenQuery:
+		return &query[*ent.RefreshTokenQuery, predicate.RefreshToken, refreshtoken.OrderOption]{typ: ent.TypeRefreshToken, tq: q}, nil
+	case *ent.ResellerQuery:
+		return &query[*ent.ResellerQuery, predicate.Reseller, reseller.OrderOption]{typ: ent.TypeReseller, tq: q}, nil
+	case *ent.ResellerPlanQuery:
+		return &query[*ent.ResellerPlanQuery, predicate.ResellerPlan, resellerplan.OrderOption]{typ: ent.TypeResellerPlan, tq: q}, nil
+	case *ent.SigningKeyQuery:
+		return &query[*ent.SigningKeyQuery, predicate.SigningKey, signingkey.OrderOption]{typ: ent.TypeSigningKey, tq: q}, nil
+	case *ent.SubscriberQuery:
+		return &query[*ent.SubscriberQuery, predicate.Subscriber, subscriber.OrderOption]{typ: ent.TypeSubscriber, tq: q}, nil
 	case *ent.UsagePlanQuery:
 		return &query[*ent.UsagePlanQuery, predicate.UsagePlan, usageplan.OrderOption]{typ: ent.TypeUsagePlan, tq: q}, nil
 	case *ent.UsageReportQuery:
 		return &query[*ent.UsageReportQuery, predicate.UsageReport, usagereport.OrderOption]{typ: ent.TypeUsageReport, tq: q}, nil
-	case *ent.UserQuery:
-		return &query[*ent.UserQuery, predicate.User, user.OrderOption]{typ: ent.TypeUser, tq: q}, nil
 	default:
 		return nil, fmt.Errorf("unknown query type %T", q)
 	}

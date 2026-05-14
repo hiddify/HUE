@@ -96,6 +96,11 @@ func CurrentDownload(v int64) predicate.Node {
 	return predicate.Node(sql.FieldEQ(FieldCurrentDownload, v))
 }
 
+// BandwidthLimitBytes applies equality check predicate on the "bandwidth_limit_bytes" field. It's identical to BandwidthLimitBytesEQ.
+func BandwidthLimitBytes(v int64) predicate.Node {
+	return predicate.Node(sql.FieldEQ(FieldBandwidthLimitBytes, v))
+}
+
 // Country applies equality check predicate on the "country" field. It's identical to CountryEQ.
 func Country(v string) predicate.Node {
 	return predicate.Node(sql.FieldEQ(FieldCountry, v))
@@ -511,6 +516,66 @@ func CurrentDownloadLTE(v int64) predicate.Node {
 	return predicate.Node(sql.FieldLTE(FieldCurrentDownload, v))
 }
 
+// BandwidthLimitBytesEQ applies the EQ predicate on the "bandwidth_limit_bytes" field.
+func BandwidthLimitBytesEQ(v int64) predicate.Node {
+	return predicate.Node(sql.FieldEQ(FieldBandwidthLimitBytes, v))
+}
+
+// BandwidthLimitBytesNEQ applies the NEQ predicate on the "bandwidth_limit_bytes" field.
+func BandwidthLimitBytesNEQ(v int64) predicate.Node {
+	return predicate.Node(sql.FieldNEQ(FieldBandwidthLimitBytes, v))
+}
+
+// BandwidthLimitBytesIn applies the In predicate on the "bandwidth_limit_bytes" field.
+func BandwidthLimitBytesIn(vs ...int64) predicate.Node {
+	return predicate.Node(sql.FieldIn(FieldBandwidthLimitBytes, vs...))
+}
+
+// BandwidthLimitBytesNotIn applies the NotIn predicate on the "bandwidth_limit_bytes" field.
+func BandwidthLimitBytesNotIn(vs ...int64) predicate.Node {
+	return predicate.Node(sql.FieldNotIn(FieldBandwidthLimitBytes, vs...))
+}
+
+// BandwidthLimitBytesGT applies the GT predicate on the "bandwidth_limit_bytes" field.
+func BandwidthLimitBytesGT(v int64) predicate.Node {
+	return predicate.Node(sql.FieldGT(FieldBandwidthLimitBytes, v))
+}
+
+// BandwidthLimitBytesGTE applies the GTE predicate on the "bandwidth_limit_bytes" field.
+func BandwidthLimitBytesGTE(v int64) predicate.Node {
+	return predicate.Node(sql.FieldGTE(FieldBandwidthLimitBytes, v))
+}
+
+// BandwidthLimitBytesLT applies the LT predicate on the "bandwidth_limit_bytes" field.
+func BandwidthLimitBytesLT(v int64) predicate.Node {
+	return predicate.Node(sql.FieldLT(FieldBandwidthLimitBytes, v))
+}
+
+// BandwidthLimitBytesLTE applies the LTE predicate on the "bandwidth_limit_bytes" field.
+func BandwidthLimitBytesLTE(v int64) predicate.Node {
+	return predicate.Node(sql.FieldLTE(FieldBandwidthLimitBytes, v))
+}
+
+// ConfigIsNil applies the IsNil predicate on the "config" field.
+func ConfigIsNil() predicate.Node {
+	return predicate.Node(sql.FieldIsNull(FieldConfig))
+}
+
+// ConfigNotNil applies the NotNil predicate on the "config" field.
+func ConfigNotNil() predicate.Node {
+	return predicate.Node(sql.FieldNotNull(FieldConfig))
+}
+
+// ServiceHostnamesIsNil applies the IsNil predicate on the "service_hostnames" field.
+func ServiceHostnamesIsNil() predicate.Node {
+	return predicate.Node(sql.FieldIsNull(FieldServiceHostnames))
+}
+
+// ServiceHostnamesNotNil applies the NotNil predicate on the "service_hostnames" field.
+func ServiceHostnamesNotNil() predicate.Node {
+	return predicate.Node(sql.FieldNotNull(FieldServiceHostnames))
+}
+
 // CountryEQ applies the EQ predicate on the "country" field.
 func CountryEQ(v string) predicate.Node {
 	return predicate.Node(sql.FieldEQ(FieldCountry, v))
@@ -806,21 +871,21 @@ func StatusNotIn(vs ...Status) predicate.Node {
 	return predicate.Node(sql.FieldNotIn(FieldStatus, vs...))
 }
 
-// HasServices applies the HasEdge predicate on the "services" edge.
-func HasServices() predicate.Node {
+// HasAgents applies the HasEdge predicate on the "agents" edge.
+func HasAgents() predicate.Node {
 	return predicate.Node(func(s *sql.Selector) {
 		step := sqlgraph.NewStep(
 			sqlgraph.From(Table, FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, ServicesTable, ServicesColumn),
+			sqlgraph.Edge(sqlgraph.O2M, false, AgentsTable, AgentsColumn),
 		)
 		sqlgraph.HasNeighbors(s, step)
 	})
 }
 
-// HasServicesWith applies the HasEdge predicate on the "services" edge with a given conditions (other predicates).
-func HasServicesWith(preds ...predicate.Service) predicate.Node {
+// HasAgentsWith applies the HasEdge predicate on the "agents" edge with a given conditions (other predicates).
+func HasAgentsWith(preds ...predicate.Agent) predicate.Node {
 	return predicate.Node(func(s *sql.Selector) {
-		step := newServicesStep()
+		step := newAgentsStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

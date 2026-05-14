@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -15,36 +16,40 @@ import (
 	entapikey "github.com/hiddify/hue/internal/ent/apikey"
 )
 
-// Authenticator validates inbound API keys against the api_keys table.
+// Authenticator validates inbound API keys against the api_keys table
+// and (in phase 2.3) verifies JWTs for Subscriber/Reseller principals.
 //
-// The set of unauthenticated methods is intentionally tiny: the standard
-// health check and the node-bootstrap RPC (which exists to exchange a
-// node-issuance one-time token for a session token).
+// API-key kinds today: Owner, Agent.
+// JWT kinds (handled by JWTVerifier — wired in phase 2.3): Subscriber,
+// Reseller.
+//
+// AllowMethods bypasses auth — kept tiny: gRPC health + HUE's own
+// HealthCheck + anonymous AuthService RPCs (Login / Refresh).
 type Authenticator struct {
 	db *ent.Client
 
-	// AllowMethods is the set of full gRPC method names that bypass auth,
-	// e.g. "/grpc.health.v1.Health/Check". Set at construction.
 	AllowMethods map[string]struct{}
 }
 
-// NewAuthenticator returns an authenticator for the given ent client.
-// Unauthenticated methods include the gRPC health service and HUE's
-// HealthCheck + NodeService.AuthenticateNode RPCs.
 func NewAuthenticator(db *ent.Client) *Authenticator {
 	return &Authenticator{
 		db: db,
 		AllowMethods: map[string]struct{}{
-			"/grpc.health.v1.Health/Check":            {},
-			"/grpc.health.v1.Health/Watch":            {},
-			"/hue.v1.AdminService/HealthCheck":        {},
-			"/hue.v1.NodeService/AuthenticateNode":    {},
+			"/grpc.health.v1.Health/Check":         {},
+			"/grpc.health.v1.Health/Watch":         {},
+			"/hue.v1.AdminService/HealthCheck":     {},
+			"/hue.v1.AuthService/Login":            {},
+			"/hue.v1.AuthService/Refresh":          {},
 		},
 	}
 }
 
-// Authenticate extracts the bearer token from gRPC metadata, looks it up,
-// verifies the Argon2id hash, and returns the Actor on success.
+// Authenticate extracts the bearer token from gRPC metadata, decides
+// whether it's an API key (Owner/Agent) or a JWT (Subscriber/Reseller)
+// by shape, validates accordingly, and returns the Actor.
+//
+// API key shape: starts with "own_" or "agt_".
+// JWT shape: three base64url-encoded segments separated by ".".
 func (a *Authenticator) Authenticate(ctx context.Context) (Actor, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
@@ -52,8 +57,6 @@ func (a *Authenticator) Authenticate(ctx context.Context) (Actor, error) {
 	}
 	values := md.Get("authorization")
 	if len(values) == 0 {
-		// gRPC-gateway forwards the HTTP "Authorization" header lowercased
-		// already; this branch is for direct gRPC clients that capitalize.
 		values = md.Get("Authorization")
 	}
 	if len(values) == 0 {
@@ -66,11 +69,30 @@ func (a *Authenticator) Authenticate(ctx context.Context) (Actor, error) {
 	}
 	tok = tok[len(bearerPfx):]
 
+	if looksLikeAPIKey(tok) {
+		return a.authenticateAPIKey(ctx, tok)
+	}
+	if looksLikeJWT(tok) {
+		return a.authenticateJWT(ctx, tok)
+	}
+	return Actor{}, errors.New("malformed token")
+}
+
+func looksLikeAPIKey(tok string) bool {
+	return strings.HasPrefix(tok, prefixOwner+"_") || strings.HasPrefix(tok, prefixAgent+"_")
+}
+
+func looksLikeJWT(tok string) bool {
+	// Three dot-separated segments and no underscores in the first one
+	// (rules out our own API-key shape's prefix).
+	return strings.Count(tok, ".") == 2 && !strings.Contains(strings.SplitN(tok, ".", 2)[0], "_")
+}
+
+func (a *Authenticator) authenticateAPIKey(ctx context.Context, tok string) (Actor, error) {
 	prefix := LookupPrefix(tok)
 	if prefix == "" {
 		return Actor{}, errors.New("malformed token")
 	}
-
 	row, err := a.db.ApiKey.Query().Where(entapikey.Prefix(prefix)).Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -81,27 +103,63 @@ func (a *Authenticator) Authenticate(ctx context.Context) (Actor, error) {
 	if row.RevokedAt != nil {
 		return Actor{}, errors.New("token revoked")
 	}
+	if row.ExpiresAt != nil && !row.ExpiresAt.After(time.Now()) {
+		return Actor{}, errors.New("token expired")
+	}
 	if err := VerifyToken(tok, row.Hash); err != nil {
 		return Actor{}, errors.New("token mismatch")
 	}
-
-	// Best-effort last_used_at update; do not fail the request on error.
-	go func(id any) {
+	go func() {
 		_, _ = a.db.ApiKey.UpdateOneID(row.ID).
 			SetLastUsedAt(time.Now().UTC()).
 			Save(context.Background())
-	}(row.ID)
+	}()
 
-	ownerID, _ := parseUUID(row.OwnerID)
+	var (
+		kind      PrincipalKind
+		subjectID uuid.UUID
+	)
+	switch row.Kind {
+	case entapikey.KindOwner:
+		kind = PrincipalKindOwner
+	case entapikey.KindAgent:
+		kind = PrincipalKindAgent
+		subjectID, _ = parseUUID(row.AgentID)
+	default:
+		return Actor{}, errors.New("unknown api_key kind")
+	}
 	return Actor{
-		Kind:    ActorKind(row.Kind),
-		OwnerID: ownerID,
-		KeyID:   row.ID,
+		Kind:      kind,
+		SubjectID: subjectID,
+		KeyID:     row.ID,
 	}, nil
 }
 
-// UnaryInterceptor wraps a unary RPC with auth. Methods listed in
-// AllowMethods bypass auth.
+func (a *Authenticator) authenticateJWT(ctx context.Context, tok string) (Actor, error) {
+	claims, err := VerifyJWT(ctx, a.db, tok)
+	if err != nil {
+		return Actor{}, err
+	}
+	var kind PrincipalKind
+	switch claims.Kind {
+	case "subscriber":
+		kind = PrincipalKindSubscriber
+	case "reseller":
+		kind = PrincipalKindReseller
+	case "owner":
+		kind = PrincipalKindOwner
+	default:
+		return Actor{}, errors.New("unknown JWT kind")
+	}
+	subjectID, _ := parseUUID(claims.Subject)
+	sudoTargetID, _ := parseUUID(claims.SudoTargetID)
+	return Actor{
+		Kind:         kind,
+		SubjectID:    subjectID,
+		SudoTargetID: sudoTargetID,
+	}, nil
+}
+
 func (a *Authenticator) UnaryInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		if _, allowed := a.AllowMethods[info.FullMethod]; allowed {
@@ -115,7 +173,6 @@ func (a *Authenticator) UnaryInterceptor() grpc.UnaryServerInterceptor {
 	}
 }
 
-// StreamInterceptor is the streaming counterpart.
 func (a *Authenticator) StreamInterceptor() grpc.StreamServerInterceptor {
 	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		if _, allowed := a.AllowMethods[info.FullMethod]; allowed {

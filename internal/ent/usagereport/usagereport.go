@@ -12,12 +12,12 @@ const (
 	Label = "usage_report"
 	// FieldID holds the string denoting the id field in the database.
 	FieldID = "id"
-	// FieldUserID holds the string denoting the user_id field in the database.
-	FieldUserID = "user_id"
+	// FieldClientID holds the string denoting the client_id field in the database.
+	FieldClientID = "client_id"
 	// FieldNodeID holds the string denoting the node_id field in the database.
 	FieldNodeID = "node_id"
-	// FieldServiceID holds the string denoting the service_id field in the database.
-	FieldServiceID = "service_id"
+	// FieldAgentID holds the string denoting the agent_id field in the database.
+	FieldAgentID = "agent_id"
 	// FieldUpload holds the string denoting the upload field in the database.
 	FieldUpload = "upload"
 	// FieldDownload holds the string denoting the download field in the database.
@@ -35,9 +35,9 @@ const (
 // Columns holds all SQL columns for usagereport fields.
 var Columns = []string{
 	FieldID,
-	FieldUserID,
+	FieldClientID,
 	FieldNodeID,
-	FieldServiceID,
+	FieldAgentID,
 	FieldUpload,
 	FieldDownload,
 	FieldSessionID,
@@ -78,9 +78,9 @@ func ByID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldID, opts...).ToFunc()
 }
 
-// ByUserID orders the results by the user_id field.
-func ByUserID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldUserID, opts...).ToFunc()
+// ByClientID orders the results by the client_id field.
+func ByClientID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldClientID, opts...).ToFunc()
 }
 
 // ByNodeID orders the results by the node_id field.
@@ -88,9 +88,9 @@ func ByNodeID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldNodeID, opts...).ToFunc()
 }
 
-// ByServiceID orders the results by the service_id field.
-func ByServiceID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldServiceID, opts...).ToFunc()
+// ByAgentID orders the results by the agent_id field.
+func ByAgentID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAgentID, opts...).ToFunc()
 }
 
 // ByUpload orders the results by the upload field.

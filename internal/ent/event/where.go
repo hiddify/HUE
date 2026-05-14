@@ -55,9 +55,9 @@ func IDLTE(id uuid.UUID) predicate.Event {
 	return predicate.Event(sql.FieldLTE(FieldID, id))
 }
 
-// UserID applies equality check predicate on the "user_id" field. It's identical to UserIDEQ.
-func UserID(v string) predicate.Event {
-	return predicate.Event(sql.FieldEQ(FieldUserID, v))
+// ClientID applies equality check predicate on the "client_id" field. It's identical to ClientIDEQ.
+func ClientID(v string) predicate.Event {
+	return predicate.Event(sql.FieldEQ(FieldClientID, v))
 }
 
 // PlanID applies equality check predicate on the "plan_id" field. It's identical to PlanIDEQ.
@@ -70,14 +70,14 @@ func NodeID(v string) predicate.Event {
 	return predicate.Event(sql.FieldEQ(FieldNodeID, v))
 }
 
-// ServiceID applies equality check predicate on the "service_id" field. It's identical to ServiceIDEQ.
-func ServiceID(v string) predicate.Event {
-	return predicate.Event(sql.FieldEQ(FieldServiceID, v))
+// AgentID applies equality check predicate on the "agent_id" field. It's identical to AgentIDEQ.
+func AgentID(v string) predicate.Event {
+	return predicate.Event(sql.FieldEQ(FieldAgentID, v))
 }
 
-// ManagerID applies equality check predicate on the "manager_id" field. It's identical to ManagerIDEQ.
-func ManagerID(v string) predicate.Event {
-	return predicate.Event(sql.FieldEQ(FieldManagerID, v))
+// ResellerID applies equality check predicate on the "reseller_id" field. It's identical to ResellerIDEQ.
+func ResellerID(v string) predicate.Event {
+	return predicate.Event(sql.FieldEQ(FieldResellerID, v))
 }
 
 // Ts applies equality check predicate on the "ts" field. It's identical to TsEQ.
@@ -105,79 +105,79 @@ func TypeNotIn(vs ...Type) predicate.Event {
 	return predicate.Event(sql.FieldNotIn(FieldType, vs...))
 }
 
-// UserIDEQ applies the EQ predicate on the "user_id" field.
-func UserIDEQ(v string) predicate.Event {
-	return predicate.Event(sql.FieldEQ(FieldUserID, v))
+// ClientIDEQ applies the EQ predicate on the "client_id" field.
+func ClientIDEQ(v string) predicate.Event {
+	return predicate.Event(sql.FieldEQ(FieldClientID, v))
 }
 
-// UserIDNEQ applies the NEQ predicate on the "user_id" field.
-func UserIDNEQ(v string) predicate.Event {
-	return predicate.Event(sql.FieldNEQ(FieldUserID, v))
+// ClientIDNEQ applies the NEQ predicate on the "client_id" field.
+func ClientIDNEQ(v string) predicate.Event {
+	return predicate.Event(sql.FieldNEQ(FieldClientID, v))
 }
 
-// UserIDIn applies the In predicate on the "user_id" field.
-func UserIDIn(vs ...string) predicate.Event {
-	return predicate.Event(sql.FieldIn(FieldUserID, vs...))
+// ClientIDIn applies the In predicate on the "client_id" field.
+func ClientIDIn(vs ...string) predicate.Event {
+	return predicate.Event(sql.FieldIn(FieldClientID, vs...))
 }
 
-// UserIDNotIn applies the NotIn predicate on the "user_id" field.
-func UserIDNotIn(vs ...string) predicate.Event {
-	return predicate.Event(sql.FieldNotIn(FieldUserID, vs...))
+// ClientIDNotIn applies the NotIn predicate on the "client_id" field.
+func ClientIDNotIn(vs ...string) predicate.Event {
+	return predicate.Event(sql.FieldNotIn(FieldClientID, vs...))
 }
 
-// UserIDGT applies the GT predicate on the "user_id" field.
-func UserIDGT(v string) predicate.Event {
-	return predicate.Event(sql.FieldGT(FieldUserID, v))
+// ClientIDGT applies the GT predicate on the "client_id" field.
+func ClientIDGT(v string) predicate.Event {
+	return predicate.Event(sql.FieldGT(FieldClientID, v))
 }
 
-// UserIDGTE applies the GTE predicate on the "user_id" field.
-func UserIDGTE(v string) predicate.Event {
-	return predicate.Event(sql.FieldGTE(FieldUserID, v))
+// ClientIDGTE applies the GTE predicate on the "client_id" field.
+func ClientIDGTE(v string) predicate.Event {
+	return predicate.Event(sql.FieldGTE(FieldClientID, v))
 }
 
-// UserIDLT applies the LT predicate on the "user_id" field.
-func UserIDLT(v string) predicate.Event {
-	return predicate.Event(sql.FieldLT(FieldUserID, v))
+// ClientIDLT applies the LT predicate on the "client_id" field.
+func ClientIDLT(v string) predicate.Event {
+	return predicate.Event(sql.FieldLT(FieldClientID, v))
 }
 
-// UserIDLTE applies the LTE predicate on the "user_id" field.
-func UserIDLTE(v string) predicate.Event {
-	return predicate.Event(sql.FieldLTE(FieldUserID, v))
+// ClientIDLTE applies the LTE predicate on the "client_id" field.
+func ClientIDLTE(v string) predicate.Event {
+	return predicate.Event(sql.FieldLTE(FieldClientID, v))
 }
 
-// UserIDContains applies the Contains predicate on the "user_id" field.
-func UserIDContains(v string) predicate.Event {
-	return predicate.Event(sql.FieldContains(FieldUserID, v))
+// ClientIDContains applies the Contains predicate on the "client_id" field.
+func ClientIDContains(v string) predicate.Event {
+	return predicate.Event(sql.FieldContains(FieldClientID, v))
 }
 
-// UserIDHasPrefix applies the HasPrefix predicate on the "user_id" field.
-func UserIDHasPrefix(v string) predicate.Event {
-	return predicate.Event(sql.FieldHasPrefix(FieldUserID, v))
+// ClientIDHasPrefix applies the HasPrefix predicate on the "client_id" field.
+func ClientIDHasPrefix(v string) predicate.Event {
+	return predicate.Event(sql.FieldHasPrefix(FieldClientID, v))
 }
 
-// UserIDHasSuffix applies the HasSuffix predicate on the "user_id" field.
-func UserIDHasSuffix(v string) predicate.Event {
-	return predicate.Event(sql.FieldHasSuffix(FieldUserID, v))
+// ClientIDHasSuffix applies the HasSuffix predicate on the "client_id" field.
+func ClientIDHasSuffix(v string) predicate.Event {
+	return predicate.Event(sql.FieldHasSuffix(FieldClientID, v))
 }
 
-// UserIDIsNil applies the IsNil predicate on the "user_id" field.
-func UserIDIsNil() predicate.Event {
-	return predicate.Event(sql.FieldIsNull(FieldUserID))
+// ClientIDIsNil applies the IsNil predicate on the "client_id" field.
+func ClientIDIsNil() predicate.Event {
+	return predicate.Event(sql.FieldIsNull(FieldClientID))
 }
 
-// UserIDNotNil applies the NotNil predicate on the "user_id" field.
-func UserIDNotNil() predicate.Event {
-	return predicate.Event(sql.FieldNotNull(FieldUserID))
+// ClientIDNotNil applies the NotNil predicate on the "client_id" field.
+func ClientIDNotNil() predicate.Event {
+	return predicate.Event(sql.FieldNotNull(FieldClientID))
 }
 
-// UserIDEqualFold applies the EqualFold predicate on the "user_id" field.
-func UserIDEqualFold(v string) predicate.Event {
-	return predicate.Event(sql.FieldEqualFold(FieldUserID, v))
+// ClientIDEqualFold applies the EqualFold predicate on the "client_id" field.
+func ClientIDEqualFold(v string) predicate.Event {
+	return predicate.Event(sql.FieldEqualFold(FieldClientID, v))
 }
 
-// UserIDContainsFold applies the ContainsFold predicate on the "user_id" field.
-func UserIDContainsFold(v string) predicate.Event {
-	return predicate.Event(sql.FieldContainsFold(FieldUserID, v))
+// ClientIDContainsFold applies the ContainsFold predicate on the "client_id" field.
+func ClientIDContainsFold(v string) predicate.Event {
+	return predicate.Event(sql.FieldContainsFold(FieldClientID, v))
 }
 
 // PlanIDEQ applies the EQ predicate on the "plan_id" field.
@@ -330,154 +330,154 @@ func NodeIDContainsFold(v string) predicate.Event {
 	return predicate.Event(sql.FieldContainsFold(FieldNodeID, v))
 }
 
-// ServiceIDEQ applies the EQ predicate on the "service_id" field.
-func ServiceIDEQ(v string) predicate.Event {
-	return predicate.Event(sql.FieldEQ(FieldServiceID, v))
+// AgentIDEQ applies the EQ predicate on the "agent_id" field.
+func AgentIDEQ(v string) predicate.Event {
+	return predicate.Event(sql.FieldEQ(FieldAgentID, v))
 }
 
-// ServiceIDNEQ applies the NEQ predicate on the "service_id" field.
-func ServiceIDNEQ(v string) predicate.Event {
-	return predicate.Event(sql.FieldNEQ(FieldServiceID, v))
+// AgentIDNEQ applies the NEQ predicate on the "agent_id" field.
+func AgentIDNEQ(v string) predicate.Event {
+	return predicate.Event(sql.FieldNEQ(FieldAgentID, v))
 }
 
-// ServiceIDIn applies the In predicate on the "service_id" field.
-func ServiceIDIn(vs ...string) predicate.Event {
-	return predicate.Event(sql.FieldIn(FieldServiceID, vs...))
+// AgentIDIn applies the In predicate on the "agent_id" field.
+func AgentIDIn(vs ...string) predicate.Event {
+	return predicate.Event(sql.FieldIn(FieldAgentID, vs...))
 }
 
-// ServiceIDNotIn applies the NotIn predicate on the "service_id" field.
-func ServiceIDNotIn(vs ...string) predicate.Event {
-	return predicate.Event(sql.FieldNotIn(FieldServiceID, vs...))
+// AgentIDNotIn applies the NotIn predicate on the "agent_id" field.
+func AgentIDNotIn(vs ...string) predicate.Event {
+	return predicate.Event(sql.FieldNotIn(FieldAgentID, vs...))
 }
 
-// ServiceIDGT applies the GT predicate on the "service_id" field.
-func ServiceIDGT(v string) predicate.Event {
-	return predicate.Event(sql.FieldGT(FieldServiceID, v))
+// AgentIDGT applies the GT predicate on the "agent_id" field.
+func AgentIDGT(v string) predicate.Event {
+	return predicate.Event(sql.FieldGT(FieldAgentID, v))
 }
 
-// ServiceIDGTE applies the GTE predicate on the "service_id" field.
-func ServiceIDGTE(v string) predicate.Event {
-	return predicate.Event(sql.FieldGTE(FieldServiceID, v))
+// AgentIDGTE applies the GTE predicate on the "agent_id" field.
+func AgentIDGTE(v string) predicate.Event {
+	return predicate.Event(sql.FieldGTE(FieldAgentID, v))
 }
 
-// ServiceIDLT applies the LT predicate on the "service_id" field.
-func ServiceIDLT(v string) predicate.Event {
-	return predicate.Event(sql.FieldLT(FieldServiceID, v))
+// AgentIDLT applies the LT predicate on the "agent_id" field.
+func AgentIDLT(v string) predicate.Event {
+	return predicate.Event(sql.FieldLT(FieldAgentID, v))
 }
 
-// ServiceIDLTE applies the LTE predicate on the "service_id" field.
-func ServiceIDLTE(v string) predicate.Event {
-	return predicate.Event(sql.FieldLTE(FieldServiceID, v))
+// AgentIDLTE applies the LTE predicate on the "agent_id" field.
+func AgentIDLTE(v string) predicate.Event {
+	return predicate.Event(sql.FieldLTE(FieldAgentID, v))
 }
 
-// ServiceIDContains applies the Contains predicate on the "service_id" field.
-func ServiceIDContains(v string) predicate.Event {
-	return predicate.Event(sql.FieldContains(FieldServiceID, v))
+// AgentIDContains applies the Contains predicate on the "agent_id" field.
+func AgentIDContains(v string) predicate.Event {
+	return predicate.Event(sql.FieldContains(FieldAgentID, v))
 }
 
-// ServiceIDHasPrefix applies the HasPrefix predicate on the "service_id" field.
-func ServiceIDHasPrefix(v string) predicate.Event {
-	return predicate.Event(sql.FieldHasPrefix(FieldServiceID, v))
+// AgentIDHasPrefix applies the HasPrefix predicate on the "agent_id" field.
+func AgentIDHasPrefix(v string) predicate.Event {
+	return predicate.Event(sql.FieldHasPrefix(FieldAgentID, v))
 }
 
-// ServiceIDHasSuffix applies the HasSuffix predicate on the "service_id" field.
-func ServiceIDHasSuffix(v string) predicate.Event {
-	return predicate.Event(sql.FieldHasSuffix(FieldServiceID, v))
+// AgentIDHasSuffix applies the HasSuffix predicate on the "agent_id" field.
+func AgentIDHasSuffix(v string) predicate.Event {
+	return predicate.Event(sql.FieldHasSuffix(FieldAgentID, v))
 }
 
-// ServiceIDIsNil applies the IsNil predicate on the "service_id" field.
-func ServiceIDIsNil() predicate.Event {
-	return predicate.Event(sql.FieldIsNull(FieldServiceID))
+// AgentIDIsNil applies the IsNil predicate on the "agent_id" field.
+func AgentIDIsNil() predicate.Event {
+	return predicate.Event(sql.FieldIsNull(FieldAgentID))
 }
 
-// ServiceIDNotNil applies the NotNil predicate on the "service_id" field.
-func ServiceIDNotNil() predicate.Event {
-	return predicate.Event(sql.FieldNotNull(FieldServiceID))
+// AgentIDNotNil applies the NotNil predicate on the "agent_id" field.
+func AgentIDNotNil() predicate.Event {
+	return predicate.Event(sql.FieldNotNull(FieldAgentID))
 }
 
-// ServiceIDEqualFold applies the EqualFold predicate on the "service_id" field.
-func ServiceIDEqualFold(v string) predicate.Event {
-	return predicate.Event(sql.FieldEqualFold(FieldServiceID, v))
+// AgentIDEqualFold applies the EqualFold predicate on the "agent_id" field.
+func AgentIDEqualFold(v string) predicate.Event {
+	return predicate.Event(sql.FieldEqualFold(FieldAgentID, v))
 }
 
-// ServiceIDContainsFold applies the ContainsFold predicate on the "service_id" field.
-func ServiceIDContainsFold(v string) predicate.Event {
-	return predicate.Event(sql.FieldContainsFold(FieldServiceID, v))
+// AgentIDContainsFold applies the ContainsFold predicate on the "agent_id" field.
+func AgentIDContainsFold(v string) predicate.Event {
+	return predicate.Event(sql.FieldContainsFold(FieldAgentID, v))
 }
 
-// ManagerIDEQ applies the EQ predicate on the "manager_id" field.
-func ManagerIDEQ(v string) predicate.Event {
-	return predicate.Event(sql.FieldEQ(FieldManagerID, v))
+// ResellerIDEQ applies the EQ predicate on the "reseller_id" field.
+func ResellerIDEQ(v string) predicate.Event {
+	return predicate.Event(sql.FieldEQ(FieldResellerID, v))
 }
 
-// ManagerIDNEQ applies the NEQ predicate on the "manager_id" field.
-func ManagerIDNEQ(v string) predicate.Event {
-	return predicate.Event(sql.FieldNEQ(FieldManagerID, v))
+// ResellerIDNEQ applies the NEQ predicate on the "reseller_id" field.
+func ResellerIDNEQ(v string) predicate.Event {
+	return predicate.Event(sql.FieldNEQ(FieldResellerID, v))
 }
 
-// ManagerIDIn applies the In predicate on the "manager_id" field.
-func ManagerIDIn(vs ...string) predicate.Event {
-	return predicate.Event(sql.FieldIn(FieldManagerID, vs...))
+// ResellerIDIn applies the In predicate on the "reseller_id" field.
+func ResellerIDIn(vs ...string) predicate.Event {
+	return predicate.Event(sql.FieldIn(FieldResellerID, vs...))
 }
 
-// ManagerIDNotIn applies the NotIn predicate on the "manager_id" field.
-func ManagerIDNotIn(vs ...string) predicate.Event {
-	return predicate.Event(sql.FieldNotIn(FieldManagerID, vs...))
+// ResellerIDNotIn applies the NotIn predicate on the "reseller_id" field.
+func ResellerIDNotIn(vs ...string) predicate.Event {
+	return predicate.Event(sql.FieldNotIn(FieldResellerID, vs...))
 }
 
-// ManagerIDGT applies the GT predicate on the "manager_id" field.
-func ManagerIDGT(v string) predicate.Event {
-	return predicate.Event(sql.FieldGT(FieldManagerID, v))
+// ResellerIDGT applies the GT predicate on the "reseller_id" field.
+func ResellerIDGT(v string) predicate.Event {
+	return predicate.Event(sql.FieldGT(FieldResellerID, v))
 }
 
-// ManagerIDGTE applies the GTE predicate on the "manager_id" field.
-func ManagerIDGTE(v string) predicate.Event {
-	return predicate.Event(sql.FieldGTE(FieldManagerID, v))
+// ResellerIDGTE applies the GTE predicate on the "reseller_id" field.
+func ResellerIDGTE(v string) predicate.Event {
+	return predicate.Event(sql.FieldGTE(FieldResellerID, v))
 }
 
-// ManagerIDLT applies the LT predicate on the "manager_id" field.
-func ManagerIDLT(v string) predicate.Event {
-	return predicate.Event(sql.FieldLT(FieldManagerID, v))
+// ResellerIDLT applies the LT predicate on the "reseller_id" field.
+func ResellerIDLT(v string) predicate.Event {
+	return predicate.Event(sql.FieldLT(FieldResellerID, v))
 }
 
-// ManagerIDLTE applies the LTE predicate on the "manager_id" field.
-func ManagerIDLTE(v string) predicate.Event {
-	return predicate.Event(sql.FieldLTE(FieldManagerID, v))
+// ResellerIDLTE applies the LTE predicate on the "reseller_id" field.
+func ResellerIDLTE(v string) predicate.Event {
+	return predicate.Event(sql.FieldLTE(FieldResellerID, v))
 }
 
-// ManagerIDContains applies the Contains predicate on the "manager_id" field.
-func ManagerIDContains(v string) predicate.Event {
-	return predicate.Event(sql.FieldContains(FieldManagerID, v))
+// ResellerIDContains applies the Contains predicate on the "reseller_id" field.
+func ResellerIDContains(v string) predicate.Event {
+	return predicate.Event(sql.FieldContains(FieldResellerID, v))
 }
 
-// ManagerIDHasPrefix applies the HasPrefix predicate on the "manager_id" field.
-func ManagerIDHasPrefix(v string) predicate.Event {
-	return predicate.Event(sql.FieldHasPrefix(FieldManagerID, v))
+// ResellerIDHasPrefix applies the HasPrefix predicate on the "reseller_id" field.
+func ResellerIDHasPrefix(v string) predicate.Event {
+	return predicate.Event(sql.FieldHasPrefix(FieldResellerID, v))
 }
 
-// ManagerIDHasSuffix applies the HasSuffix predicate on the "manager_id" field.
-func ManagerIDHasSuffix(v string) predicate.Event {
-	return predicate.Event(sql.FieldHasSuffix(FieldManagerID, v))
+// ResellerIDHasSuffix applies the HasSuffix predicate on the "reseller_id" field.
+func ResellerIDHasSuffix(v string) predicate.Event {
+	return predicate.Event(sql.FieldHasSuffix(FieldResellerID, v))
 }
 
-// ManagerIDIsNil applies the IsNil predicate on the "manager_id" field.
-func ManagerIDIsNil() predicate.Event {
-	return predicate.Event(sql.FieldIsNull(FieldManagerID))
+// ResellerIDIsNil applies the IsNil predicate on the "reseller_id" field.
+func ResellerIDIsNil() predicate.Event {
+	return predicate.Event(sql.FieldIsNull(FieldResellerID))
 }
 
-// ManagerIDNotNil applies the NotNil predicate on the "manager_id" field.
-func ManagerIDNotNil() predicate.Event {
-	return predicate.Event(sql.FieldNotNull(FieldManagerID))
+// ResellerIDNotNil applies the NotNil predicate on the "reseller_id" field.
+func ResellerIDNotNil() predicate.Event {
+	return predicate.Event(sql.FieldNotNull(FieldResellerID))
 }
 
-// ManagerIDEqualFold applies the EqualFold predicate on the "manager_id" field.
-func ManagerIDEqualFold(v string) predicate.Event {
-	return predicate.Event(sql.FieldEqualFold(FieldManagerID, v))
+// ResellerIDEqualFold applies the EqualFold predicate on the "reseller_id" field.
+func ResellerIDEqualFold(v string) predicate.Event {
+	return predicate.Event(sql.FieldEqualFold(FieldResellerID, v))
 }
 
-// ManagerIDContainsFold applies the ContainsFold predicate on the "manager_id" field.
-func ManagerIDContainsFold(v string) predicate.Event {
-	return predicate.Event(sql.FieldContainsFold(FieldManagerID, v))
+// ResellerIDContainsFold applies the ContainsFold predicate on the "reseller_id" field.
+func ResellerIDContainsFold(v string) predicate.Event {
+	return predicate.Event(sql.FieldContainsFold(FieldResellerID, v))
 }
 
 // TagsIsNil applies the IsNil predicate on the "tags" field.

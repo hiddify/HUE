@@ -5,13 +5,13 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/hiddify/hue/pkg/clients"
-	"github.com/hiddify/hue/pkg/clients/template"
+	"github.com/hiddify/hue/pkg/agents"
+	"github.com/hiddify/hue/pkg/agents/template"
 )
 
-// Compile-time assertion that the template satisfies clients.Client.
+// Compile-time assertion that the template satisfies agents.Agent.
 // Every adapter package should ship this single line.
-var _ clients.Client = (*template.Client)(nil)
+var _ agents.Agent = (*template.Client)(nil)
 
 // TestTemplate_AllMethodsAreUnsupported is the contract for an adapter
 // with Capabilities() == 0: every method must return ErrUnsupported
@@ -39,13 +39,13 @@ func TestTemplate_AllMethodsAreUnsupported(t *testing.T) {
 	}{
 		{"Healthcheck", func() error { return c.Healthcheck(ctx) }},
 		{"ReadStats", func() error { _, err := c.ReadStats(ctx); return err }},
-		{"Disconnect", func() error { return c.Disconnect(ctx, clients.User{ID: "u"}) }},
-		{"AddUser", func() error { return c.AddUser(ctx, clients.User{ID: "u"}, "s") }},
-		{"RemoveUser", func() error { return c.RemoveUser(ctx, clients.User{ID: "u"}) }},
+		{"Disconnect", func() error { return c.Disconnect(ctx, agents.User{ID: "u"}) }},
+		{"AddUser", func() error { return c.AddUser(ctx, agents.User{ID: "u"}, "s") }},
+		{"RemoveUser", func() error { return c.RemoveUser(ctx, agents.User{ID: "u"}) }},
 		{"SyncConfig", func() error { _, err := c.SyncConfig(ctx); return err }},
 	}
 	for _, ch := range checks {
-		if err := ch.fn(); !errors.Is(err, clients.ErrUnsupported) {
+		if err := ch.fn(); !errors.Is(err, agents.ErrUnsupported) {
 			t.Errorf("%s: got %v, want errors.Is(err, ErrUnsupported)", ch.name, err)
 		}
 	}

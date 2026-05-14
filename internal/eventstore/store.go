@@ -21,26 +21,28 @@ import (
 	entevent "github.com/hiddify/hue/internal/ent/event"
 )
 
-// Event is the in-memory representation of an audit event. Persisted shape
-// matches internal/ent/schema/event.go.
+// Event is the in-memory representation of an audit event. Persisted
+// shape matches internal/ent/schema/event.go (phase-2 vocabulary:
+// client_id was user_id, agent_id was service_id, reseller_id was
+// manager_id).
 type Event struct {
-	ID        uuid.UUID
-	Type      string
-	UserID    string
-	PlanID    string
-	NodeID    string
-	ServiceID string
-	ManagerID string
-	Tags      []string
-	Metadata  map[string]any
-	Timestamp time.Time
+	ID         uuid.UUID
+	Type       string
+	ClientID   string
+	PlanID     string
+	NodeID     string
+	AgentID    string
+	ResellerID string
+	Tags       []string
+	Metadata   map[string]any
+	Timestamp  time.Time
 }
 
 // Filter narrows what a subscriber wants. Empty slice = match everything.
 type Filter struct {
-	Types     []string
-	UserID    string
-	ManagerID string
+	Types      []string
+	ClientID   string
+	ResellerID string
 }
 
 // Store appends events to the database and pushes them to live
@@ -85,11 +87,11 @@ func (s *Store) Append(ctx context.Context, e Event) error {
 	created, err := s.db.Event.Create().
 		SetID(e.ID).
 		SetType(entevent.Type(e.Type)).
-		SetUserID(e.UserID).
+		SetClientID(e.ClientID).
 		SetPlanID(e.PlanID).
 		SetNodeID(e.NodeID).
-		SetServiceID(e.ServiceID).
-		SetManagerID(e.ManagerID).
+		SetAgentID(e.AgentID).
+		SetResellerID(e.ResellerID).
 		SetTags(e.Tags).
 		SetMetadata(e.Metadata).
 		SetTs(e.Timestamp).
@@ -168,10 +170,10 @@ func matches(f Filter, e Event) bool {
 			return false
 		}
 	}
-	if f.UserID != "" && f.UserID != e.UserID {
+	if f.ClientID != "" && f.ClientID != e.ClientID {
 		return false
 	}
-	if f.ManagerID != "" && f.ManagerID != e.ManagerID {
+	if f.ResellerID != "" && f.ResellerID != e.ResellerID {
 		return false
 	}
 	return true

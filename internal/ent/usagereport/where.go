@@ -55,9 +55,9 @@ func IDLTE(id uuid.UUID) predicate.UsageReport {
 	return predicate.UsageReport(sql.FieldLTE(FieldID, id))
 }
 
-// UserID applies equality check predicate on the "user_id" field. It's identical to UserIDEQ.
-func UserID(v uuid.UUID) predicate.UsageReport {
-	return predicate.UsageReport(sql.FieldEQ(FieldUserID, v))
+// ClientID applies equality check predicate on the "client_id" field. It's identical to ClientIDEQ.
+func ClientID(v uuid.UUID) predicate.UsageReport {
+	return predicate.UsageReport(sql.FieldEQ(FieldClientID, v))
 }
 
 // NodeID applies equality check predicate on the "node_id" field. It's identical to NodeIDEQ.
@@ -65,9 +65,9 @@ func NodeID(v uuid.UUID) predicate.UsageReport {
 	return predicate.UsageReport(sql.FieldEQ(FieldNodeID, v))
 }
 
-// ServiceID applies equality check predicate on the "service_id" field. It's identical to ServiceIDEQ.
-func ServiceID(v uuid.UUID) predicate.UsageReport {
-	return predicate.UsageReport(sql.FieldEQ(FieldServiceID, v))
+// AgentID applies equality check predicate on the "agent_id" field. It's identical to AgentIDEQ.
+func AgentID(v uuid.UUID) predicate.UsageReport {
+	return predicate.UsageReport(sql.FieldEQ(FieldAgentID, v))
 }
 
 // Upload applies equality check predicate on the "upload" field. It's identical to UploadEQ.
@@ -90,44 +90,44 @@ func Ts(v time.Time) predicate.UsageReport {
 	return predicate.UsageReport(sql.FieldEQ(FieldTs, v))
 }
 
-// UserIDEQ applies the EQ predicate on the "user_id" field.
-func UserIDEQ(v uuid.UUID) predicate.UsageReport {
-	return predicate.UsageReport(sql.FieldEQ(FieldUserID, v))
+// ClientIDEQ applies the EQ predicate on the "client_id" field.
+func ClientIDEQ(v uuid.UUID) predicate.UsageReport {
+	return predicate.UsageReport(sql.FieldEQ(FieldClientID, v))
 }
 
-// UserIDNEQ applies the NEQ predicate on the "user_id" field.
-func UserIDNEQ(v uuid.UUID) predicate.UsageReport {
-	return predicate.UsageReport(sql.FieldNEQ(FieldUserID, v))
+// ClientIDNEQ applies the NEQ predicate on the "client_id" field.
+func ClientIDNEQ(v uuid.UUID) predicate.UsageReport {
+	return predicate.UsageReport(sql.FieldNEQ(FieldClientID, v))
 }
 
-// UserIDIn applies the In predicate on the "user_id" field.
-func UserIDIn(vs ...uuid.UUID) predicate.UsageReport {
-	return predicate.UsageReport(sql.FieldIn(FieldUserID, vs...))
+// ClientIDIn applies the In predicate on the "client_id" field.
+func ClientIDIn(vs ...uuid.UUID) predicate.UsageReport {
+	return predicate.UsageReport(sql.FieldIn(FieldClientID, vs...))
 }
 
-// UserIDNotIn applies the NotIn predicate on the "user_id" field.
-func UserIDNotIn(vs ...uuid.UUID) predicate.UsageReport {
-	return predicate.UsageReport(sql.FieldNotIn(FieldUserID, vs...))
+// ClientIDNotIn applies the NotIn predicate on the "client_id" field.
+func ClientIDNotIn(vs ...uuid.UUID) predicate.UsageReport {
+	return predicate.UsageReport(sql.FieldNotIn(FieldClientID, vs...))
 }
 
-// UserIDGT applies the GT predicate on the "user_id" field.
-func UserIDGT(v uuid.UUID) predicate.UsageReport {
-	return predicate.UsageReport(sql.FieldGT(FieldUserID, v))
+// ClientIDGT applies the GT predicate on the "client_id" field.
+func ClientIDGT(v uuid.UUID) predicate.UsageReport {
+	return predicate.UsageReport(sql.FieldGT(FieldClientID, v))
 }
 
-// UserIDGTE applies the GTE predicate on the "user_id" field.
-func UserIDGTE(v uuid.UUID) predicate.UsageReport {
-	return predicate.UsageReport(sql.FieldGTE(FieldUserID, v))
+// ClientIDGTE applies the GTE predicate on the "client_id" field.
+func ClientIDGTE(v uuid.UUID) predicate.UsageReport {
+	return predicate.UsageReport(sql.FieldGTE(FieldClientID, v))
 }
 
-// UserIDLT applies the LT predicate on the "user_id" field.
-func UserIDLT(v uuid.UUID) predicate.UsageReport {
-	return predicate.UsageReport(sql.FieldLT(FieldUserID, v))
+// ClientIDLT applies the LT predicate on the "client_id" field.
+func ClientIDLT(v uuid.UUID) predicate.UsageReport {
+	return predicate.UsageReport(sql.FieldLT(FieldClientID, v))
 }
 
-// UserIDLTE applies the LTE predicate on the "user_id" field.
-func UserIDLTE(v uuid.UUID) predicate.UsageReport {
-	return predicate.UsageReport(sql.FieldLTE(FieldUserID, v))
+// ClientIDLTE applies the LTE predicate on the "client_id" field.
+func ClientIDLTE(v uuid.UUID) predicate.UsageReport {
+	return predicate.UsageReport(sql.FieldLTE(FieldClientID, v))
 }
 
 // NodeIDEQ applies the EQ predicate on the "node_id" field.
@@ -180,54 +180,54 @@ func NodeIDNotNil() predicate.UsageReport {
 	return predicate.UsageReport(sql.FieldNotNull(FieldNodeID))
 }
 
-// ServiceIDEQ applies the EQ predicate on the "service_id" field.
-func ServiceIDEQ(v uuid.UUID) predicate.UsageReport {
-	return predicate.UsageReport(sql.FieldEQ(FieldServiceID, v))
+// AgentIDEQ applies the EQ predicate on the "agent_id" field.
+func AgentIDEQ(v uuid.UUID) predicate.UsageReport {
+	return predicate.UsageReport(sql.FieldEQ(FieldAgentID, v))
 }
 
-// ServiceIDNEQ applies the NEQ predicate on the "service_id" field.
-func ServiceIDNEQ(v uuid.UUID) predicate.UsageReport {
-	return predicate.UsageReport(sql.FieldNEQ(FieldServiceID, v))
+// AgentIDNEQ applies the NEQ predicate on the "agent_id" field.
+func AgentIDNEQ(v uuid.UUID) predicate.UsageReport {
+	return predicate.UsageReport(sql.FieldNEQ(FieldAgentID, v))
 }
 
-// ServiceIDIn applies the In predicate on the "service_id" field.
-func ServiceIDIn(vs ...uuid.UUID) predicate.UsageReport {
-	return predicate.UsageReport(sql.FieldIn(FieldServiceID, vs...))
+// AgentIDIn applies the In predicate on the "agent_id" field.
+func AgentIDIn(vs ...uuid.UUID) predicate.UsageReport {
+	return predicate.UsageReport(sql.FieldIn(FieldAgentID, vs...))
 }
 
-// ServiceIDNotIn applies the NotIn predicate on the "service_id" field.
-func ServiceIDNotIn(vs ...uuid.UUID) predicate.UsageReport {
-	return predicate.UsageReport(sql.FieldNotIn(FieldServiceID, vs...))
+// AgentIDNotIn applies the NotIn predicate on the "agent_id" field.
+func AgentIDNotIn(vs ...uuid.UUID) predicate.UsageReport {
+	return predicate.UsageReport(sql.FieldNotIn(FieldAgentID, vs...))
 }
 
-// ServiceIDGT applies the GT predicate on the "service_id" field.
-func ServiceIDGT(v uuid.UUID) predicate.UsageReport {
-	return predicate.UsageReport(sql.FieldGT(FieldServiceID, v))
+// AgentIDGT applies the GT predicate on the "agent_id" field.
+func AgentIDGT(v uuid.UUID) predicate.UsageReport {
+	return predicate.UsageReport(sql.FieldGT(FieldAgentID, v))
 }
 
-// ServiceIDGTE applies the GTE predicate on the "service_id" field.
-func ServiceIDGTE(v uuid.UUID) predicate.UsageReport {
-	return predicate.UsageReport(sql.FieldGTE(FieldServiceID, v))
+// AgentIDGTE applies the GTE predicate on the "agent_id" field.
+func AgentIDGTE(v uuid.UUID) predicate.UsageReport {
+	return predicate.UsageReport(sql.FieldGTE(FieldAgentID, v))
 }
 
-// ServiceIDLT applies the LT predicate on the "service_id" field.
-func ServiceIDLT(v uuid.UUID) predicate.UsageReport {
-	return predicate.UsageReport(sql.FieldLT(FieldServiceID, v))
+// AgentIDLT applies the LT predicate on the "agent_id" field.
+func AgentIDLT(v uuid.UUID) predicate.UsageReport {
+	return predicate.UsageReport(sql.FieldLT(FieldAgentID, v))
 }
 
-// ServiceIDLTE applies the LTE predicate on the "service_id" field.
-func ServiceIDLTE(v uuid.UUID) predicate.UsageReport {
-	return predicate.UsageReport(sql.FieldLTE(FieldServiceID, v))
+// AgentIDLTE applies the LTE predicate on the "agent_id" field.
+func AgentIDLTE(v uuid.UUID) predicate.UsageReport {
+	return predicate.UsageReport(sql.FieldLTE(FieldAgentID, v))
 }
 
-// ServiceIDIsNil applies the IsNil predicate on the "service_id" field.
-func ServiceIDIsNil() predicate.UsageReport {
-	return predicate.UsageReport(sql.FieldIsNull(FieldServiceID))
+// AgentIDIsNil applies the IsNil predicate on the "agent_id" field.
+func AgentIDIsNil() predicate.UsageReport {
+	return predicate.UsageReport(sql.FieldIsNull(FieldAgentID))
 }
 
-// ServiceIDNotNil applies the NotNil predicate on the "service_id" field.
-func ServiceIDNotNil() predicate.UsageReport {
-	return predicate.UsageReport(sql.FieldNotNull(FieldServiceID))
+// AgentIDNotNil applies the NotNil predicate on the "agent_id" field.
+func AgentIDNotNil() predicate.UsageReport {
+	return predicate.UsageReport(sql.FieldNotNull(FieldAgentID))
 }
 
 // UploadEQ applies the EQ predicate on the "upload" field.

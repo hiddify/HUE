@@ -38,6 +38,12 @@ const (
 	FieldCurrentUpload = "current_upload"
 	// FieldCurrentDownload holds the string denoting the current_download field in the database.
 	FieldCurrentDownload = "current_download"
+	// FieldBandwidthLimitBytes holds the string denoting the bandwidth_limit_bytes field in the database.
+	FieldBandwidthLimitBytes = "bandwidth_limit_bytes"
+	// FieldConfig holds the string denoting the config field in the database.
+	FieldConfig = "config"
+	// FieldServiceHostnames holds the string denoting the service_hostnames field in the database.
+	FieldServiceHostnames = "service_hostnames"
 	// FieldCountry holds the string denoting the country field in the database.
 	FieldCountry = "country"
 	// FieldCity holds the string denoting the city field in the database.
@@ -48,17 +54,17 @@ const (
 	FieldAsn = "asn"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
-	// EdgeServices holds the string denoting the services edge name in mutations.
-	EdgeServices = "services"
+	// EdgeAgents holds the string denoting the agents edge name in mutations.
+	EdgeAgents = "agents"
 	// Table holds the table name of the node in the database.
 	Table = "nodes"
-	// ServicesTable is the table that holds the services relation/edge.
-	ServicesTable = "services"
-	// ServicesInverseTable is the table name for the Service entity.
-	// It exists in this package in order to avoid circular dependency with the "service" package.
-	ServicesInverseTable = "services"
-	// ServicesColumn is the table column denoting the services relation/edge.
-	ServicesColumn = "node_id"
+	// AgentsTable is the table that holds the agents relation/edge.
+	AgentsTable = "agents"
+	// AgentsInverseTable is the table name for the Agent entity.
+	// It exists in this package in order to avoid circular dependency with the "agent" package.
+	AgentsInverseTable = "agents"
+	// AgentsColumn is the table column denoting the agents relation/edge.
+	AgentsColumn = "node_id"
 )
 
 // Columns holds all SQL columns for node fields.
@@ -75,6 +81,9 @@ var Columns = []string{
 	FieldCurrentTotal,
 	FieldCurrentUpload,
 	FieldCurrentDownload,
+	FieldBandwidthLimitBytes,
+	FieldConfig,
+	FieldServiceHostnames,
 	FieldCountry,
 	FieldCity,
 	FieldIsp,
@@ -115,6 +124,10 @@ var (
 	DefaultCurrentDownload int64
 	// CurrentDownloadValidator is a validator for the "current_download" field. It is called by the builders before save.
 	CurrentDownloadValidator func(int64) error
+	// DefaultBandwidthLimitBytes holds the default value on creation for the "bandwidth_limit_bytes" field.
+	DefaultBandwidthLimitBytes int64
+	// BandwidthLimitBytesValidator is a validator for the "bandwidth_limit_bytes" field. It is called by the builders before save.
+	BandwidthLimitBytesValidator func(int64) error
 	// CountryValidator is a validator for the "country" field. It is called by the builders before save.
 	CountryValidator func(string) error
 	// CityValidator is a validator for the "city" field. It is called by the builders before save.
@@ -234,6 +247,11 @@ func ByCurrentDownload(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCurrentDownload, opts...).ToFunc()
 }
 
+// ByBandwidthLimitBytes orders the results by the bandwidth_limit_bytes field.
+func ByBandwidthLimitBytes(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBandwidthLimitBytes, opts...).ToFunc()
+}
+
 // ByCountry orders the results by the country field.
 func ByCountry(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCountry, opts...).ToFunc()
@@ -259,23 +277,23 @@ func ByStatus(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldStatus, opts...).ToFunc()
 }
 
-// ByServicesCount orders the results by services count.
-func ByServicesCount(opts ...sql.OrderTermOption) OrderOption {
+// ByAgentsCount orders the results by agents count.
+func ByAgentsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborsCount(s, newServicesStep(), opts...)
+		sqlgraph.OrderByNeighborsCount(s, newAgentsStep(), opts...)
 	}
 }
 
-// ByServices orders the results by services terms.
-func ByServices(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+// ByAgents orders the results by agents terms.
+func ByAgents(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborTerms(s, newServicesStep(), append([]sql.OrderTerm{term}, terms...)...)
+		sqlgraph.OrderByNeighborTerms(s, newAgentsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
-func newServicesStep() *sqlgraph.Step {
+func newAgentsStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
-		sqlgraph.To(ServicesInverseTable, FieldID),
-		sqlgraph.Edge(sqlgraph.O2M, false, ServicesTable, ServicesColumn),
+		sqlgraph.To(AgentsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, AgentsTable, AgentsColumn),
 	)
 }

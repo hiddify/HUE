@@ -7,7 +7,7 @@ import (
 
 func TestGenerateKey_Roundtrip(t *testing.T) {
 	t.Parallel()
-	for _, kind := range []ActorKind{KindManager, KindService, KindNode} {
+	for _, kind := range []ActorKind{KindOwner, KindAgent} {
 		t.Run(string(kind), func(t *testing.T) {
 			t.Parallel()
 			prefix, plaintext, hash, err := GenerateKey(kind)
@@ -33,7 +33,7 @@ func TestGenerateKey_Roundtrip(t *testing.T) {
 
 func TestVerifyToken_RejectsTampered(t *testing.T) {
 	t.Parallel()
-	_, plaintext, hash, err := GenerateKey(KindManager)
+	_, plaintext, hash, err := GenerateKey(KindOwner)
 	if err != nil {
 		t.Fatalf("GenerateKey: %v", err)
 	}
@@ -67,11 +67,11 @@ func TestVerifyToken_RejectsMalformedHash(t *testing.T) {
 func TestLookupPrefix(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
-		"mgr_abcdefgh1234":   "mgr_abcdefgh",
-		"svc_aaaaaaaabbbbcc": "svc_aaaaaaaa",
+		"own_abcdefgh1234":   "own_abcdefgh",
+		"agt_aaaaaaaabbbbcc": "agt_aaaaaaaa",
 		"":                   "",
 		"noprefix":           "",
-		"mgr_short":          "", // body shorter than prefixBodyChrs
+		"own_short":          "", // body shorter than prefixBodyChrs
 	}
 	for in, want := range cases {
 		if got := LookupPrefix(in); got != want {

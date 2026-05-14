@@ -16,16 +16,16 @@ const (
 	FieldID = "id"
 	// FieldType holds the string denoting the type field in the database.
 	FieldType = "type"
-	// FieldUserID holds the string denoting the user_id field in the database.
-	FieldUserID = "user_id"
+	// FieldClientID holds the string denoting the client_id field in the database.
+	FieldClientID = "client_id"
 	// FieldPlanID holds the string denoting the plan_id field in the database.
 	FieldPlanID = "plan_id"
 	// FieldNodeID holds the string denoting the node_id field in the database.
 	FieldNodeID = "node_id"
-	// FieldServiceID holds the string denoting the service_id field in the database.
-	FieldServiceID = "service_id"
-	// FieldManagerID holds the string denoting the manager_id field in the database.
-	FieldManagerID = "manager_id"
+	// FieldAgentID holds the string denoting the agent_id field in the database.
+	FieldAgentID = "agent_id"
+	// FieldResellerID holds the string denoting the reseller_id field in the database.
+	FieldResellerID = "reseller_id"
 	// FieldTags holds the string denoting the tags field in the database.
 	FieldTags = "tags"
 	// FieldMetadata holds the string denoting the metadata field in the database.
@@ -40,11 +40,11 @@ const (
 var Columns = []string{
 	FieldID,
 	FieldType,
-	FieldUserID,
+	FieldClientID,
 	FieldPlanID,
 	FieldNodeID,
-	FieldServiceID,
-	FieldManagerID,
+	FieldAgentID,
+	FieldResellerID,
 	FieldTags,
 	FieldMetadata,
 	FieldTs,
@@ -61,16 +61,16 @@ func ValidColumn(column string) bool {
 }
 
 var (
-	// UserIDValidator is a validator for the "user_id" field. It is called by the builders before save.
-	UserIDValidator func(string) error
+	// ClientIDValidator is a validator for the "client_id" field. It is called by the builders before save.
+	ClientIDValidator func(string) error
 	// PlanIDValidator is a validator for the "plan_id" field. It is called by the builders before save.
 	PlanIDValidator func(string) error
 	// NodeIDValidator is a validator for the "node_id" field. It is called by the builders before save.
 	NodeIDValidator func(string) error
-	// ServiceIDValidator is a validator for the "service_id" field. It is called by the builders before save.
-	ServiceIDValidator func(string) error
-	// ManagerIDValidator is a validator for the "manager_id" field. It is called by the builders before save.
-	ManagerIDValidator func(string) error
+	// AgentIDValidator is a validator for the "agent_id" field. It is called by the builders before save.
+	AgentIDValidator func(string) error
+	// ResellerIDValidator is a validator for the "reseller_id" field. It is called by the builders before save.
+	ResellerIDValidator func(string) error
 	// DefaultID holds the default value on creation for the "id" field.
 	DefaultID func() uuid.UUID
 )
@@ -80,21 +80,34 @@ type Type string
 
 // Type values.
 const (
-	TypeUserConnected       Type = "user_connected"
-	TypeUserDisconnected    Type = "user_disconnected"
-	TypeUsageRecorded       Type = "usage_recorded"
-	TypeUsagePlanExpired    Type = "usage_plan_expired"
-	TypeUsagePlanQuotaUsed  Type = "usage_plan_quota_used"
-	TypeNodeReset           Type = "node_reset"
-	TypeManagerExpired      Type = "manager_expired"
-	TypePenaltyApplied      Type = "penalty_applied"
-	TypePenaltyExpired      Type = "penalty_expired"
-	TypeUserSuspended       Type = "user_suspended"
-	TypeUserActivated       Type = "user_activated"
-	TypeManagerLimitReached Type = "manager_limit_reached"
-	TypeUsagePlanStarted    Type = "usage_plan_started"
-	TypeManagerPlanStarted  Type = "manager_plan_started"
-	TypeServiceKeyShared    Type = "service_key_shared"
+	TypeClientConnected        Type = "client_connected"
+	TypeClientDisconnected     Type = "client_disconnected"
+	TypeClientSuspended        Type = "client_suspended"
+	TypeClientActivated        Type = "client_activated"
+	TypeClientLimitReached     Type = "client_limit_reached"
+	TypeUsageRecorded          Type = "usage_recorded"
+	TypeUsagePlanExpired       Type = "usage_plan_expired"
+	TypeUsagePlanQuotaUsed     Type = "usage_plan_quota_used"
+	TypeUsagePlanStarted       Type = "usage_plan_started"
+	TypePenaltyApplied         Type = "penalty_applied"
+	TypePenaltyExpired         Type = "penalty_expired"
+	TypeNodeReset              Type = "node_reset"
+	TypeNodeQuotaReached       Type = "node_quota_reached"
+	TypeResellerExpired        Type = "reseller_expired"
+	TypeResellerLimitReached   Type = "reseller_limit_reached"
+	TypeResellerPlanStarted    Type = "reseller_plan_started"
+	TypeLoginSucceeded         Type = "login_succeeded"
+	TypeLoginFailed            Type = "login_failed"
+	TypeLoginLockedOut         Type = "login_locked_out"
+	TypeOwnerSudoLogin         Type = "owner_sudo_login"
+	TypeApiKeyRevoked          Type = "api_key_revoked"
+	TypeCertAdded              Type = "cert_added"
+	TypeCertExpired            Type = "cert_expired"
+	TypeCertRenewed            Type = "cert_renewed"
+	TypeCertSelfSignedFallback Type = "cert_self_signed_fallback"
+	TypeAgentConnected         Type = "agent_connected"
+	TypeAgentDisconnected      Type = "agent_disconnected"
+	TypeAgentConfigSynced      Type = "agent_config_synced"
 )
 
 func (_type Type) String() string {
@@ -104,7 +117,7 @@ func (_type Type) String() string {
 // TypeValidator is a validator for the "type" field enum values. It is called by the builders before save.
 func TypeValidator(_type Type) error {
 	switch _type {
-	case TypeUserConnected, TypeUserDisconnected, TypeUsageRecorded, TypeUsagePlanExpired, TypeUsagePlanQuotaUsed, TypeNodeReset, TypeManagerExpired, TypePenaltyApplied, TypePenaltyExpired, TypeUserSuspended, TypeUserActivated, TypeManagerLimitReached, TypeUsagePlanStarted, TypeManagerPlanStarted, TypeServiceKeyShared:
+	case TypeClientConnected, TypeClientDisconnected, TypeClientSuspended, TypeClientActivated, TypeClientLimitReached, TypeUsageRecorded, TypeUsagePlanExpired, TypeUsagePlanQuotaUsed, TypeUsagePlanStarted, TypePenaltyApplied, TypePenaltyExpired, TypeNodeReset, TypeNodeQuotaReached, TypeResellerExpired, TypeResellerLimitReached, TypeResellerPlanStarted, TypeLoginSucceeded, TypeLoginFailed, TypeLoginLockedOut, TypeOwnerSudoLogin, TypeApiKeyRevoked, TypeCertAdded, TypeCertExpired, TypeCertRenewed, TypeCertSelfSignedFallback, TypeAgentConnected, TypeAgentDisconnected, TypeAgentConfigSynced:
 		return nil
 	default:
 		return fmt.Errorf("event: invalid enum value for type field: %q", _type)
@@ -124,9 +137,9 @@ func ByType(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldType, opts...).ToFunc()
 }
 
-// ByUserID orders the results by the user_id field.
-func ByUserID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldUserID, opts...).ToFunc()
+// ByClientID orders the results by the client_id field.
+func ByClientID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldClientID, opts...).ToFunc()
 }
 
 // ByPlanID orders the results by the plan_id field.
@@ -139,14 +152,14 @@ func ByNodeID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldNodeID, opts...).ToFunc()
 }
 
-// ByServiceID orders the results by the service_id field.
-func ByServiceID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldServiceID, opts...).ToFunc()
+// ByAgentID orders the results by the agent_id field.
+func ByAgentID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAgentID, opts...).ToFunc()
 }
 
-// ByManagerID orders the results by the manager_id field.
-func ByManagerID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldManagerID, opts...).ToFunc()
+// ByResellerID orders the results by the reseller_id field.
+func ByResellerID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldResellerID, opts...).ToFunc()
 }
 
 // ByTs orders the results by the ts field.

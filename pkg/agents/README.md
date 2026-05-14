@@ -1,4 +1,4 @@
-# pkg/clients — protocol adapters
+# pkg/agents — protocol adapters
 
 This package tree holds HUE's protocol adapters: thin shims that let the
 engine talk to a running service (xray, singbox, wireguard, OpenVPN, …)
@@ -7,18 +7,19 @@ through one Go interface, no matter what that service speaks on the wire.
 Layout:
 
 ```
-pkg/clients/
-├── clients.go          ← the common Client interface + Capability flags
+pkg/agents/
+├── agents.go           ← the common Agent interface + Capability flags
 ├── template/           ← copy-paste starting point for a new protocol
-└── xray/               ← representative implementation against xray-core's gRPC API
+├── wireguard/          ← wg-quick writer + wg syncconf invoker
+└── xray/               ← xray-core admin API adapter
 ```
 
 ## The contract
 
-Every adapter implements [`clients.Client`](clients.go):
+Every adapter implements [`agents.Agent`](agents.go):
 
 ```go
-type Client interface {
+type Agent interface {
     Name() string
     Capabilities() Capability
     Healthcheck(ctx context.Context) error
@@ -26,11 +27,16 @@ type Client interface {
     Disconnect(ctx context.Context, u User) error
     AddUser(ctx context.Context, u User, secret string) error
     RemoveUser(ctx context.Context, u User) error
+    SyncConfig(ctx context.Context) (changed bool, err error)
     Close() error
 }
 ```
 
-Anything an adapter can't do returns `clients.ErrUnsupported` and the
+Each protocol's struct type lives in its own subpackage and stays
+named `Client` (`xray.Client`, `wireguard.Client`, `template.Client`).
+The interface name `Agent` is shared.
+
+Anything an adapter can't do returns `agents.ErrUnsupported` and the
 matching `Capability` bit is omitted from `Capabilities()`. The engine
 checks the bitmask before calling, so unsupported features become
 fast-path no-ops instead of errors during a request.
@@ -38,7 +44,7 @@ fast-path no-ops instead of errors during a request.
 ## Adding a new adapter
 
 ```bash
-cp -r pkg/clients/template pkg/clients/foo
+cp -r pkg/agents/template pkg/agents/foo
 # Replace template/Template with foo/Foo throughout
 ```
 
@@ -46,9 +52,9 @@ Then for each method:
 
 1. Decide whether the protocol supports it. If yes, OR the matching
    `Capability` bit into `Capabilities()` and implement.
-2. If no, leave the body returning `clients.ErrUnsupported`.
+2. If no, leave the body returning `agents.ErrUnsupported`.
 3. Keep all protocol-specific types and helpers in
-   `pkg/clients/foo/` — only `clients.User`, `clients.UsageDelta`, and
+   `pkg/agents/foo/` — only `agents.User`, `agents.UsageDelta`, and
    error sentinels should leak through the interface.
 
 The `_test.go` companion should fake the protocol's wire format
@@ -57,9 +63,9 @@ adapter tests don't need a live service.
 
 ## Why a separate package tree?
 
-- **`pkg/clients/...` is a public import path.** External Go programs
+- **`pkg/agents/...` is a public import path.** External Go programs
   that want to drive a HUE-managed xray instance can `go get
-  github.com/hiddify/hue/pkg/clients/xray` and use the adapter
+  github.com/hiddify/hue/pkg/agents/xray` and use the adapter
   directly, without depending on HUE's server internals.
 - **One adapter per directory means one set of dependencies per
   adapter.** The xray adapter pulls only what xray needs; the

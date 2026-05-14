@@ -7,12 +7,12 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/hiddify/hue/pkg/clients"
-	"github.com/hiddify/hue/pkg/clients/xray"
+	"github.com/hiddify/hue/pkg/agents"
+	"github.com/hiddify/hue/pkg/agents/xray"
 )
 
-// Compile-time assertion: the xray adapter implements clients.Client.
-var _ clients.Client = (*xray.Client)(nil)
+// Compile-time assertion: the xray adapter implements agents.Agent.
+var _ agents.Agent = (*xray.Client)(nil)
 
 // Compile-time assertion: XrayJSON implements xray.Renderer.
 var _ xray.Renderer = xray.XrayJSON{}
@@ -29,7 +29,7 @@ func TestXray_NewRequiresRendererWhenSyncConfigSet(t *testing.T) {
 	_, err := xray.New(xray.Config{
 		Endpoint:   "127.0.0.1:0",
 		ServiceID:  "svc-1",
-		SyncConfig: stubSyncConfig(clients.ConfigSnapshot{Changed: true}, nil),
+		SyncConfig: stubSyncConfig(agents.ConfigSnapshot{Changed: true}, nil),
 	})
 	if err == nil || !strings.Contains(err.Error(), "Renderer") {
 		t.Fatalf("expected error about missing Renderer, got %v", err)
@@ -44,7 +44,7 @@ func TestXray_CapabilitiesReflectWiring(t *testing.T) {
 		t.Fatalf("New (bare): %v", err)
 	}
 	defer bare.Close()
-	if got := bare.Capabilities(); got != clients.CapHealthcheck {
+	if got := bare.Capabilities(); got != agents.CapHealthcheck {
 		t.Errorf("bare Capabilities = %v, want CapHealthcheck only", got)
 	}
 
@@ -52,13 +52,13 @@ func TestXray_CapabilitiesReflectWiring(t *testing.T) {
 		Endpoint:   "127.0.0.1:0",
 		ServiceID:  "svc-1",
 		Renderer:   xray.XrayJSON{},
-		SyncConfig: stubSyncConfig(clients.ConfigSnapshot{Changed: true, Template: "{}"}, nil),
+		SyncConfig: stubSyncConfig(agents.ConfigSnapshot{Changed: true, Template: "{}"}, nil),
 	})
 	if err != nil {
 		t.Fatalf("New (wired): %v", err)
 	}
 	defer wired.Close()
-	if got := wired.Capabilities(); !got.Has(clients.CapConfigSync) {
+	if got := wired.Capabilities(); !got.Has(agents.CapConfigSync) {
 		t.Errorf("wired Capabilities = %v, want CapConfigSync set", got)
 	}
 }
@@ -70,7 +70,7 @@ func TestXray_SyncConfigUnsupportedWithoutCallback(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	defer c.Close()
-	if _, err := c.SyncConfig(context.Background()); !errors.Is(err, clients.ErrUnsupported) {
+	if _, err := c.SyncConfig(context.Background()); !errors.Is(err, agents.ErrUnsupported) {
 		t.Fatalf("SyncConfig without callback: got %v, want ErrUnsupported", err)
 	}
 }
@@ -80,7 +80,7 @@ func TestXray_SyncConfigUnsupportedWithoutCallback(t *testing.T) {
 // substitute, and that the etag is cached.
 func TestXray_SyncConfigRendersUsersAndCachesEtag(t *testing.T) {
 	t.Parallel()
-	snap := clients.ConfigSnapshot{
+	snap := agents.ConfigSnapshot{
 		Template: `{
   "inbounds": [{
     "port": {{.Vars.port}},
@@ -105,7 +105,7 @@ func TestXray_SyncConfigRendersUsersAndCachesEtag(t *testing.T) {
 			"port":            "443",
 			"xray.xhttp.path": "/explicit",
 		},
-		Users: []clients.ConfigUser{
+		Users: []agents.ConfigUser{
 			{ID: "11111111-2222-3333-4444-555555555555", Username: "alice"},
 			{ID: "22222222-3333-4444-5555-666666666666", Username: "bob"},
 		},
@@ -162,7 +162,7 @@ func TestXray_SyncConfigRendersUsersAndCachesEtag(t *testing.T) {
 // vars, default kicks in.
 func TestXray_GetVarFallsBackToDefault(t *testing.T) {
 	t.Parallel()
-	snap := clients.ConfigSnapshot{
+	snap := agents.ConfigSnapshot{
 		Template: `{"path": {{getVar "missing.key" "/fallback" | quote}}}`,
 		Vars:     map[string]string{},
 		Changed:  true,
@@ -221,7 +221,7 @@ func TestXray_MultipleTransportsFromOneTemplate(t *testing.T) {
   ]
 }`
 
-	snap := clients.ConfigSnapshot{
+	snap := agents.ConfigSnapshot{
 		Template: tpl,
 		Vars: map[string]string{
 			"xhttp_port":      "443",
@@ -230,7 +230,7 @@ func TestXray_MultipleTransportsFromOneTemplate(t *testing.T) {
 			"ws_path":         "/ws",
 			"xray.ws.enabled": "true",
 		},
-		Users:   []clients.ConfigUser{{ID: "u1"}},
+		Users:   []agents.ConfigUser{{ID: "u1"}},
 		Changed: true,
 		Etag:    "e",
 	}
@@ -260,7 +260,7 @@ func TestXray_SyncConfigShortCircuitsOnUnchangedEtag(t *testing.T) {
 		Endpoint:   "127.0.0.1:0",
 		ServiceID:  "svc-1",
 		Renderer:   xray.XrayJSON{},
-		SyncConfig: stubSyncConfig(clients.ConfigSnapshot{Etag: "same", Changed: false}, nil),
+		SyncConfig: stubSyncConfig(agents.ConfigSnapshot{Etag: "same", Changed: false}, nil),
 		ApplyConfig: func([]byte) error {
 			applied.Add(1)
 			return nil
@@ -287,7 +287,7 @@ func TestXray_RendererFormatNegotiation(t *testing.T) {
 		Endpoint:    "127.0.0.1:0",
 		ServiceID:   "svc-1",
 		Renderer:    xray.XrayJSON{},
-		SyncConfig:  stubSyncConfig(clients.ConfigSnapshot{Template: "x", TemplateFormat: "wireguard-ini", Changed: true, Etag: "e"}, nil),
+		SyncConfig:  stubSyncConfig(agents.ConfigSnapshot{Template: "x", TemplateFormat: "wireguard-ini", Changed: true, Etag: "e"}, nil),
 		ApplyConfig: func([]byte) error { return nil },
 	})
 	defer c.Close()
@@ -305,7 +305,7 @@ func TestXray_InvalidJSONInRenderedTemplate(t *testing.T) {
 		Endpoint:    "127.0.0.1:0",
 		ServiceID:   "svc-1",
 		Renderer:    xray.XrayJSON{},
-		SyncConfig:  stubSyncConfig(clients.ConfigSnapshot{Template: `{"a": 1`, Changed: true, Etag: "e"}, nil),
+		SyncConfig:  stubSyncConfig(agents.ConfigSnapshot{Template: `{"a": 1`, Changed: true, Etag: "e"}, nil),
 		ApplyConfig: func([]byte) error { return nil },
 	})
 	defer c.Close()
@@ -323,7 +323,7 @@ func TestXray_MissingVarFailsLoudly(t *testing.T) {
 		Endpoint:    "127.0.0.1:0",
 		ServiceID:   "svc-1",
 		Renderer:    xray.XrayJSON{},
-		SyncConfig:  stubSyncConfig(clients.ConfigSnapshot{Template: `{"port": {{.Vars.nope}}}`, Vars: map[string]string{}, Changed: true, Etag: "e"}, nil),
+		SyncConfig:  stubSyncConfig(agents.ConfigSnapshot{Template: `{"port": {{.Vars.nope}}}`, Vars: map[string]string{}, Changed: true, Etag: "e"}, nil),
 		ApplyConfig: func([]byte) error { return nil },
 	})
 	defer c.Close()
@@ -334,8 +334,8 @@ func TestXray_MissingVarFailsLoudly(t *testing.T) {
 
 // ----- helpers -----
 
-func stubSyncConfig(snap clients.ConfigSnapshot, err error) clients.SyncConfigFunc {
-	return func(_ context.Context, _ string) (clients.ConfigSnapshot, error) {
+func stubSyncConfig(snap agents.ConfigSnapshot, err error) agents.SyncConfigFunc {
+	return func(_ context.Context, _ string) (agents.ConfigSnapshot, error) {
 		return snap, err
 	}
 }

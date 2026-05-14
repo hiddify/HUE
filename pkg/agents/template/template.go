@@ -3,7 +3,7 @@
 //
 // To add support for a new protocol "foo":
 //
-//  1. cp -r pkg/clients/template pkg/clients/foo
+//  1. cp -r pkg/agents/template pkg/agents/foo
 //  2. Replace every occurrence of "template" / "Template" with
 //     "foo" / "Foo" (in package paths, type names, and the Name()
 //     return value).
@@ -12,7 +12,7 @@
 //  4. Pick which Capabilities the adapter actually supports and OR
 //     them in Capabilities(); leave the rest as ErrUnsupported.
 //  5. Implement the picked methods. Keep package-internal types in
-//     this package; only the clients.Client surface should leak.
+//     this package; only the agents.Agent surface should leak.
 //  6. Write a sibling _test.go that fakes the protocol's wire format
 //     so unit tests don't need a live service.
 //
@@ -25,7 +25,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/hiddify/hue/pkg/clients"
+	"github.com/hiddify/hue/pkg/agents"
 )
 
 // Config carries everything the adapter needs to talk to a single
@@ -59,34 +59,34 @@ func (c *Client) Name() string { return "template" }
 // Capabilities reports what this adapter implements. The empty
 // template returns 0 — the engine treats that as "do not call any
 // method on this client" and the registration is a no-op.
-func (c *Client) Capabilities() clients.Capability {
+func (c *Client) Capabilities() agents.Capability {
 	return 0
 	// Real adapter would OR the supported bits, e.g.:
-	// return clients.CapHealthcheck | clients.CapStats | clients.CapDisconnect
+	// return agents.CapHealthcheck | agents.CapStats | agents.CapDisconnect
 }
 
 func (c *Client) Healthcheck(_ context.Context) error {
-	return clients.ErrUnsupported
+	return agents.ErrUnsupported
 }
 
-func (c *Client) ReadStats(_ context.Context) ([]clients.UsageDelta, error) {
-	return nil, clients.ErrUnsupported
+func (c *Client) ReadStats(_ context.Context) ([]agents.UsageDelta, error) {
+	return nil, agents.ErrUnsupported
 }
 
-func (c *Client) Disconnect(_ context.Context, _ clients.User) error {
-	return clients.ErrUnsupported
+func (c *Client) Disconnect(_ context.Context, _ agents.User) error {
+	return agents.ErrUnsupported
 }
 
-func (c *Client) AddUser(_ context.Context, _ clients.User, _ string) error {
-	return clients.ErrUnsupported
+func (c *Client) AddUser(_ context.Context, _ agents.User, _ string) error {
+	return agents.ErrUnsupported
 }
 
-func (c *Client) RemoveUser(_ context.Context, _ clients.User) error {
-	return clients.ErrUnsupported
+func (c *Client) RemoveUser(_ context.Context, _ agents.User) error {
+	return agents.ErrUnsupported
 }
 
 func (c *Client) SyncConfig(_ context.Context) (bool, error) {
-	return false, clients.ErrUnsupported
+	return false, agents.ErrUnsupported
 }
 
 // Close releases adapter resources. Safe to call multiple times.

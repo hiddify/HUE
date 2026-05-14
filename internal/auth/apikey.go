@@ -1,18 +1,19 @@
-// Package auth provides API-key issuance, verification, and a gRPC
-// interceptor that attaches an Actor to every request context.
+// Package auth provides API-key issuance, verification, JWT issuance,
+// and gRPC interceptors that attach an Actor to every request context.
 //
-// Token format: "<kind_prefix>_<base32 body>" where:
-//   * kind_prefix is "mgr", "svc", or "nod" — chosen so the server can
-//     route to the right table without first hashing.
-//   * body is 24 bytes of OS randomness, base32-encoded (~38 chars,
-//     lowercased, unpadded). 192 bits of entropy.
+// Phase-2 token kinds: Owner (root, sudo-capable) and Agent (machine
+// adapter on a Node). Resellers + Clients (Subscribers) authenticate
+// via AuthService.Login → JWT instead and have no ApiKey rows.
 //
-// A LookupPrefix (kind_prefix + first 8 chars of body) is stored separately
-// from the Argon2id-encoded hash. Auth flow:
-//   1. Receive Authorization: Bearer <token>.
-//   2. Compute LookupPrefix(token) → DB index seek (unique).
-//   3. Argon2id verify the full token against the stored encoded hash.
-//   4. Reject if revoked_at IS NOT NULL.
+// Token format: "<kind_prefix>_<base32 body>"
+//   * kind_prefix: "own" (Owner) or "agt" (Agent).
+//   * body: 24 bytes of OS randomness, base32-encoded lowercase unpadded.
+//
+// LookupPrefix (kind_prefix + first 8 body chars) lives in the
+// api_keys.prefix column, indexed unique. Verification:
+//   1. Bearer → LookupPrefix → SELECT by prefix.
+//   2. Argon2id verify the full token against api_keys.hash.
+//   3. Reject if revoked_at IS NOT NULL or expires_at <= now.
 package auth
 
 import (
@@ -28,16 +29,16 @@ import (
 )
 
 // ActorKind identifies what kind of principal an API key belongs to.
+// JWT-issued principals (Subscriber/Reseller) live in PrincipalKind in
+// pkg context; ActorKind is API-key specific.
 type ActorKind string
 
 const (
-	KindManager ActorKind = "manager"
-	KindService ActorKind = "service"
-	KindNode    ActorKind = "node"
+	KindOwner ActorKind = "owner"
+	KindAgent ActorKind = "agent"
 
-	prefixManager = "mgr"
-	prefixService = "svc"
-	prefixNode    = "nod"
+	prefixOwner = "own"
+	prefixAgent = "agt"
 
 	bodyRandBytes  = 24
 	prefixBodyChrs = 8 // chars of base32 body retained in lookup prefix
@@ -45,7 +46,7 @@ const (
 
 // argon2id parameters tuned for API-key verify (~5ms on a modern CPU).
 // Tokens carry 192 bits of entropy already, so the slowdown is
-// defense-in-depth, not the primary security control.
+// defense-in-depth against DB compromise, not the primary control.
 const (
 	argonTime    uint32 = 2
 	argonMemory  uint32 = 16 * 1024 // KiB
@@ -65,12 +66,10 @@ var (
 // PrefixForKind returns the kind portion of a token prefix.
 func PrefixForKind(kind ActorKind) (string, error) {
 	switch kind {
-	case KindManager:
-		return prefixManager, nil
-	case KindService:
-		return prefixService, nil
-	case KindNode:
-		return prefixNode, nil
+	case KindOwner:
+		return prefixOwner, nil
+	case KindAgent:
+		return prefixAgent, nil
 	}
 	return "", ErrUnknownKind
 }
@@ -78,12 +77,10 @@ func PrefixForKind(kind ActorKind) (string, error) {
 // KindForPrefix is the inverse of PrefixForKind, called during lookup.
 func KindForPrefix(p string) (ActorKind, bool) {
 	switch p {
-	case prefixManager:
-		return KindManager, true
-	case prefixService:
-		return KindService, true
-	case prefixNode:
-		return KindNode, true
+	case prefixOwner:
+		return KindOwner, true
+	case prefixAgent:
+		return KindAgent, true
 	}
 	return "", false
 }
@@ -112,8 +109,8 @@ func GenerateKey(kind ActorKind) (lookupPrefix, plaintext, encodedHash string, e
 	return lookupPrefix, plaintext, encodedHash, nil
 }
 
-// LookupPrefix extracts the (kind_prefix + first 8 body chars) portion from
-// a presented token. Returns "" if the token is malformed.
+// LookupPrefix extracts the (kind_prefix + first 8 body chars) portion
+// from a presented token. Returns "" if the token is malformed.
 func LookupPrefix(token string) string {
 	idx := strings.IndexByte(token, '_')
 	if idx <= 0 || idx >= len(token)-prefixBodyChrs {

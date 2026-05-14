@@ -1,139 +1,232 @@
 # Authentication
 
-HUE issues per-actor API keys. There are three actor kinds:
+HUE has four principal kinds, split across two credential shapes:
 
-| Kind | Token prefix | Owner |
-|---|---|---|
-| Manager | `mgr_` | a `manager` row (humans, resellers, admin tooling) |
-| Service | `svc_` | a `service` row (a specific protocol on a specific node) |
-| Node | `nod_` | a `node` row (a host) |
+| Principal     | Credential             | Header                        |
+|---------------|------------------------|-------------------------------|
+| **Owner**     | API key (`own_…`)      | `Authorization: Bearer <key>` |
+| **Agent**     | API key (`agt_…`)      | `Authorization: Bearer <key>` |
+| **Reseller**  | JWT (via `Login`)      | `Authorization: Bearer <jwt>` |
+| **Client**    | JWT (via `Login`)      | `Authorization: Bearer <jwt>` |
 
-A token is `<kind_prefix>_<base32 body>`, where the body is 24 bytes
-(192 bits) of OS randomness. Total token length is around 43 chars.
+The interceptor in
+[internal/auth/interceptor.go](../internal/auth/interceptor.go) sniffs
+the token shape (starts with `own_`/`agt_` → API key, three
+base64url-encoded segments split by `.` → JWT) and dispatches to the
+right verifier. The resulting `Actor{Kind, SubjectID, KeyID}` lands
+on the request `context.Context`; downstream code reads it via
+`auth.FromContext(ctx)`.
 
-## What gets stored
+After authentication, `AuthorizeUnary` /
+`AuthorizeStream` in [internal/server/authz.go](../internal/server/authz.go)
+enforces a positive method-allow list: every non-anonymous RPC has an
+explicit `(FullMethod → allowed PrincipalKinds)` entry. Mismatch
+returns `PermissionDenied`. Anonymous routes (`/healthz`,
+`/v1/auth:login`, `/v1/auth:refresh`, gRPC health) live in
+`Authenticator.AllowMethods`.
 
-For each issued token, the database row in `api_keys` carries:
+## API keys (Owner + Agent)
 
-- `kind` — manager / service / node.
-- `owner_id` — the manager/service/node UUID this key authenticates as.
-- `prefix` — `<kind>_` plus the first 8 chars of the body. Indexed,
-  unique. The server uses this as its lookup key.
-- `hash` — the **Argon2id PHC string** of the full token. Includes
-  parameters and salt; verification re-runs Argon2id and constant-time
-  compares.
-- `last_used_at` — best-effort timestamp updated by a goroutine after
-  each successful auth. Failures don't reach the user.
-- `revoked_at` — non-NULL means the key is rejected by the interceptor.
+Token shape: `<kind>_<base32 body>` where the body is 24 bytes (192
+bits) of OS randomness. Total length ≈ 43 chars.
 
-The plaintext token is **never** stored. It is shown to the caller of
-`CreateApiKey` exactly once, in the response. Lose it, and you have to
-revoke + reissue.
+| Field on `api_keys`     | Value |
+|-------------------------|-------|
+| `kind`                  | `owner` or `agent` |
+| `owner_id`              | UUID of the Agent row for AGENT keys; empty for OWNER |
+| `prefix`                | `<kind>_` + first 8 chars of body — unique, indexed; the server's lookup key |
+| `hash`                  | Argon2id PHC of the **full** token |
+| `last_used_at`          | best-effort timestamp |
+| `revoked_at` / `expires_at` | non-NULL `revoked_at` or past `expires_at` → 401 |
 
-## Verification flow
+The plaintext token is **never** stored. `CreateApiKey` returns it
+exactly once. Lose it → revoke + reissue.
+
+### Verification flow
 
 ```
-inbound request with Authorization: Bearer <token>
-              │
-              ▼
-   parse "Bearer ", split <kind>_<body> on first _
-              │
-              ▼
-   compute LookupPrefix(token) = <kind>_<first 8 body chars>
-              │
-              ▼
+inbound: Authorization: Bearer <token>
+          │
+          ▼
+   LookupPrefix(token) = "<kind>_<first 8 body chars>"
+          │
+          ▼
    SELECT * FROM api_keys WHERE prefix = $1   (unique index)
-              │
-              ▼
-   if revoked_at IS NOT NULL: 401
-              │
-              ▼
-   argon2id verify (constant time) over full token vs row.hash
-              │
-              ▼
-   ctx = WithActor(ctx, Actor{Kind, OwnerID, KeyID})
-              │
-              ▼
-            handler
+          │
+          ▼
+   if revoked_at IS NOT NULL or expires_at < now(): 401
+          │
+          ▼
+   argon2id verify (constant-time) full token vs row.hash
+          │
+          ▼
+   ctx = WithActor(ctx, {Kind, SubjectID=owner_id, KeyID})
+          │
+          ▼
+        handler
 ```
 
-The Argon2id parameters are tuned for ~5ms per verify on a modern CPU
-(memory=16 MiB, time=2, threads=1). Tokens already carry 192 bits of
-entropy so the slowdown is defense-in-depth against database leaks, not
-the primary security control.
+Argon2id is tuned for ~5 ms / verify (memory 16 MiB, time 2, threads
+1). The 192-bit body is the primary defense; Argon2id is
+defense-in-depth against a DB leak. Comparison uses
+[`subtle.ConstantTimeCompare`](https://pkg.go.dev/crypto/subtle#ConstantTimeCompare).
 
-The comparison uses [`subtle.ConstantTimeCompare`](https://pkg.go.dev/crypto/subtle#ConstantTimeCompare).
+## JWT (Reseller + Client)
+
+Issued by `AuthService.Login`. EdDSA / ed25519 signed.
+
+### Token claims
+
+```json
+{
+  "iss":  "hue",
+  "sub":  "<reseller or client UUID>",
+  "kind": "reseller" | "client" | "owner",
+  "kid":  "<signing key UUID>",
+  "jti":  "<random>",
+  "iat":  1715600000,
+  "exp":  1715600900,
+  "owner_sudo": true
+}
+```
+
+`owner_sudo` is only present when the token was minted via the Owner
+sudo path.
+
+### Token TTLs
+
+| Token   | TTL (defaults from `auth.DefaultAccessTTL` / `DefaultRefreshTTL`) |
+|---------|------------------------------------------------------------------|
+| access  | 15 minutes |
+| refresh | 30 days, opaque base32 (sha256-hashed for DB lookup), rotates on every `Refresh`, old row gets `replaced_by` for reuse detection |
+
+### Signing key
+
+Auto-generated on first boot, persisted to the `signing_keys` table.
+The private key is AES-256-GCM encrypted with `HUE_PASSWORD_ENC_KEY`.
+Verifier walks every non-revoked `signing_keys` row, so rotation is
+non-disruptive: insert a new row, sign with it (`kid` matches new id),
+revoke the old when no token still references it.
+
+See `internal/auth/signing_key.go` (`EnsureSigningKey`,
+`LoadSigningKeys`).
+
+### Login flow
+
+```
+POST /v1/auth:login   {"username": "...", "password": "..."}
+   ↓
+1. Lockout.IsLocked(ip, username) → 429 RESOURCE_EXHAUSTED if locked
+2. Lookup Reseller or Client by username
+3. Verify:
+     Reseller: Argon2id over `resellers.password_hash`
+     Client:   AES-GCM decrypt → constant-time compare
+4. Failure → Lockout.RecordFailure; after N failures → emit "login_locked_out" event
+   Success → Lockout.Reset, emit "login_succeeded" event
+5. Mint access JWT (signed with current SigningKey) + refresh token row
+```
+
+Optional Owner-sudo path runs first: if the request *also* presents
+an `Authorization: Bearer <own_…>` API key, `password` is ignored, an
+`owner_sudo_login` event is emitted, and the JWT carries
+`owner_sudo: true`. See [phase2-changes.md → Owner sudo](phase2-changes.md#auth-model-replaces-phase-1-single-shared-key).
+
+### Brute-force lockout
+
+In-memory, per-`(ip, username)`. Default 5 failed attempts → locked
+for 15 minutes; configurable via `auth.NewLockout(max, window)`. Each
+lockout emits a `login_locked_out` event. The store is process-local
+and capped (LRU); restart drops it.
+
+Successful login resets the counter for that `(ip, username)`.
+
+## Refresh / Logout / ChangePassword
+
+| RPC | What it does |
+|---|---|
+| `Refresh` | Validates the supplied opaque refresh token, mints a new access + refresh pair, marks the old refresh row `replaced_by`. Replay of an already-replaced refresh = token theft signal; the row chain gets revoked. |
+| `Logout` | Revokes the supplied refresh token (sets `revoked_at`). Access tokens keep working until their 15-min expiry — that's the blast radius bound. |
+| `ChangePassword` | Verifies the old password against the principal's stored credential, then writes the new one (Argon2id for Reseller; AES-GCM-encrypted for Client). Revokes all existing refresh tokens for the principal. |
 
 ## Bootstrap
 
-A fresh database has no manager keys, so no one can call
-`CreateApiKey` to mint the first one. The server breaks the circularity
-on startup:
+A fresh database has no Owner keys, so nobody can call `CreateApiKey`
+to mint the first one. The server breaks the circularity on startup:
 
 1. If `HUE_BOOTSTRAP_TOKEN` is set:
-   - Verify the supplied plaintext starts with `mgr_`.
-   - If any non-revoked manager API key already exists, log and skip
+   - Verify the supplied plaintext starts with `own_`.
+   - If any non-revoked Owner API key already exists, log and skip
      (idempotent across restarts).
-   - Otherwise, find or create a `Manager` named `root`, then insert an
-     `api_keys` row with the supplied prefix + Argon2id hash.
+   - Otherwise insert an `api_keys` row with the supplied prefix +
+     Argon2id hash.
 
-After first start, **remove** `HUE_BOOTSTRAP_TOKEN` from your secrets and
-treat it as a regular API key.
+After first start, **remove** `HUE_BOOTSTRAP_TOKEN` from your secrets
+and treat the token like any other Owner key.
 
-To generate a bootstrap token offline:
+Generate a bootstrap token offline:
 
 ```go
 package main
 
 import (
-	"fmt"
-	"github.com/hiddify/hue/internal/auth"
+    "fmt"
+    "github.com/hiddify/hue/internal/auth"
 )
 
 func main() {
-	_, plaintext, _, _ := auth.GenerateKey(auth.KindManager)
-	fmt.Println(plaintext)
+    _, plaintext, _, _ := auth.GenerateKey(auth.KindOwner)
+    fmt.Println(plaintext)
 }
 ```
 
-Or in shell, since the format is just a kind prefix + 24 random bytes
-base32-encoded lowercase:
+Or in shell:
 
 ```bash
-echo "mgr_$(openssl rand -base64 18 | tr -d '/+=' | tr 'A-Z' 'a-z')"
+echo "own_$(openssl rand -base64 18 | tr -d '/+=' | tr 'A-Z' 'a-z')"
 ```
 
-## Issuing further keys
+## Issuing further API keys
 
-Use `AdminService.CreateApiKey` (`POST /v1/apiKeys`) with the bootstrap
-token in `Authorization`. The response carries `token` — the plaintext —
-exactly once.
+`AuthAdminService.CreateApiKey` (`POST /v1/apiKeys`) — Owner only.
+The response carries `token` (plaintext) exactly once.
 
 ```bash
-curl -sk -H "Authorization: Bearer $TOKEN" \
+curl -sk -H "Authorization: Bearer $OWNER" \
      -H "Content-Type: application/json" \
      https://localhost:8443/v1/apiKeys \
-     -d '{
-       "api_key": {
-         "kind":     "API_KEY_KIND_SERVICE",
-         "owner_id": "<service UUID>",
-         "name":     "vless-eu-prod"
-       }
-     }'
+     -d '{"api_key":{
+            "kind":"API_KEY_KIND_AGENT",
+            "owner_id":"<agent UUID>",
+            "name":"fra-1-xray",
+            "expires_at":"2027-01-01T00:00:00Z"
+          }}'
 ```
+
+`expires_at` is enforced by the interceptor (past = 401). Use it for
+agent keys; humans rotate via Owner sudo + new key.
 
 ## Revocation
 
-`POST /v1/apiKeys/{id}:revoke` sets `revoked_at = now()`. The interceptor
-rejects any subsequent request with that token. Revocation is immediate;
-there is no token cache.
+`POST /v1/apiKeys/{id}:revoke` sets `revoked_at = now()`. The
+interceptor reads it on every verify (no cache), so revocation is
+effective on the next request.
 
-## Per-actor authorization
+For JWTs, revocation is **refresh-token rotation only** — short
+access TTL (15 min) bounds theft blast radius. Force a full logout by
+revoking the principal's refresh tokens then waiting out the access
+window.
 
-The interceptor attaches the authenticated `Actor{Kind, OwnerID}` to the
-`context.Context`. Service-layer code uses
-[`auth.FromContext(ctx)`](../internal/auth/context.go) to enforce
-per-actor scope (e.g. "managers can only modify users they own"). The
-scoping rules are not yet wired uniformly across every RPC — track it as
-a follow-up. Until they are, treat manager keys as effectively
-admin-level and don't issue them broadly.
+## Encryption at rest
+
+| Column | Algorithm | Key |
+|---|---|---|
+| `subscribers.password_ciphertext` | AES-256-GCM | `HUE_PASSWORD_ENC_KEY` |
+| `subscribers.private_key_ciphertext` | AES-256-GCM | same |
+| `domain_certificates.private_key_ciphertext` | AES-256-GCM | same |
+| `signing_keys.private_key_ciphertext` | AES-256-GCM | same |
+| `resellers.password_hash` | Argon2id | n/a |
+| `api_keys.hash` | Argon2id | n/a |
+
+Wire format for every AES-GCM column: `[key_id (1 byte)] [nonce (12)]
+[sealed]`. The `key_id` byte reserves bandwidth for rotation; phase 3
+adds a multi-key registry.

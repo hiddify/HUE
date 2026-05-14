@@ -45,6 +45,7 @@ import (
 
 	huev1 "github.com/hiddify/hue/gen/go/hue/v1"
 	"github.com/hiddify/hue/internal/auth"
+	"github.com/hiddify/hue/internal/cert"
 	"github.com/hiddify/hue/internal/database"
 	"github.com/hiddify/hue/internal/eventstore"
 	"github.com/hiddify/hue/internal/geo"
@@ -131,6 +132,13 @@ type Config struct {
 
 	// Bootstrap
 	BootstrapToken string `env:"HUE_BOOTSTRAP_TOKEN"`
+
+	// ACME — DomainCertificateService.RequestACME wiring.
+	// Empty DirectoryURL = Let's Encrypt production. Use the staging
+	// URL during testing to avoid the prod rate limit:
+	//   HUE_ACME_DIRECTORY_URL=https://acme-staging-v02.api.letsencrypt.org/directory
+	ACMEDirectoryURL string `env:"HUE_ACME_DIRECTORY_URL"`
+	ACMEContactEmail string `env:"HUE_ACME_CONTACT_EMAIL"`
 
 	// Logging
 	LogLevel  string `env:"HUE_LOG_LEVEL, default=info"`
@@ -228,7 +236,7 @@ func Run(ctx context.Context, cfg *Config, logger *slog.Logger) error {
 	locks := service.NewLockManager()
 	sessions := service.NewSessionTracker(cfg.ConcurrentWindow)
 	penalties := service.NewPenaltyTracker(cfg.PenaltyDuration)
-	managers := service.NewManagerHierarchy(dbClient, locks)
+	resellers := service.NewResellerHierarchy(dbClient, locks)
 	events := eventstore.New(dbClient, logger)
 
 	engine := service.NewEngine(service.EngineDeps{
@@ -237,7 +245,7 @@ func Run(ctx context.Context, cfg *Config, logger *slog.Logger) error {
 		Locks:     locks,
 		Sessions:  sessions,
 		Penalties: penalties,
-		Managers:  managers,
+		Resellers: resellers,
 		Events:    events,
 	})
 
@@ -247,14 +255,32 @@ func Run(ctx context.Context, cfg *Config, logger *slog.Logger) error {
 		return fmt.Errorf("init protovalidate: %w", err)
 	}
 	authn := auth.NewAuthenticator(dbClient)
+	signingKey, err := auth.EnsureSigningKey(ctx, dbClient)
+	if err != nil {
+		return fmt.Errorf("ensure signing key: %w", err)
+	}
+	lockout := auth.NewLockout(0, 0) // defaults: 5 attempts / 15 min
+
+	// --- ACME challenger ---
+	// Single process-wide HTTP-01 provider. RequestACME registers
+	// tokens here; the listener serves them from
+	// /.well-known/acme-challenge/<token>. Always constructed —
+	// DomainCertificateServer gates the RPC on ACMEContactEmail.
+	acmeChallenger := cert.NewHTTP01Challenger()
 
 	// --- Server bundle ---
 	bundle := server.New(server.Deps{
-		DB:     dbClient,
-		Engine: engine,
-		Auth:   authn,
-		Events: events,
-		Logger: logger,
+		DB:               dbClient,
+		Engine:           engine,
+		Auth:             authn,
+		Resellers:        resellers,
+		SigningKey:       signingKey,
+		Lockout:          lockout,
+		Events:           events,
+		Logger:           logger,
+		ACMEChallenger:   acmeChallenger,
+		ACMEDirectoryURL: cfg.ACMEDirectoryURL,
+		ACMEContactEmail: cfg.ACMEContactEmail,
 	})
 
 	grpcSrv := grpc.NewServer(
@@ -262,11 +288,13 @@ func Run(ctx context.Context, cfg *Config, logger *slog.Logger) error {
 			server.PanicRecovery(logger),
 			server.SlogUnary(logger),
 			authn.UnaryInterceptor(),
+			server.AuthorizeUnary(),
 			server.Validate(validator),
 		),
 		grpc.ChainStreamInterceptor(
 			server.PanicRecoveryStream(logger),
 			authn.StreamInterceptor(),
+			server.AuthorizeStream(),
 		),
 	)
 	bundle.Register(grpcSrv)
@@ -296,14 +324,22 @@ func Run(ctx context.Context, cfg *Config, logger *slog.Logger) error {
 		runtime.WithIncomingHeaderMatcher(headerMatcher),
 		runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{}),
 	)
-	if err := huev1.RegisterAdminServiceHandler(ctx, gwMux, gwConn); err != nil {
-		return fmt.Errorf("register admin gateway: %w", err)
-	}
-	if err := huev1.RegisterUsageServiceHandler(ctx, gwMux, gwConn); err != nil {
-		return fmt.Errorf("register usage gateway: %w", err)
-	}
-	if err := huev1.RegisterNodeServiceHandler(ctx, gwMux, gwConn); err != nil {
-		return fmt.Errorf("register node gateway: %w", err)
+	for _, reg := range []struct {
+		name string
+		fn   func(context.Context, *runtime.ServeMux, *grpc.ClientConn) error
+	}{
+		{"admin", huev1.RegisterAdminServiceHandler},
+		{"resellerClients", huev1.RegisterResellerClientServiceHandler},
+		{"resellers", huev1.RegisterResellerManagementServiceHandler},
+		{"authAdmin", huev1.RegisterAuthAdminServiceHandler},
+		{"auth", huev1.RegisterAuthServiceHandler},
+		{"config", huev1.RegisterConfigServiceHandler},
+		{"certs", huev1.RegisterDomainCertificateServiceHandler},
+		{"usage", huev1.RegisterUsageServiceHandler},
+	} {
+		if err := reg.fn(ctx, gwMux, gwConn); err != nil {
+			return fmt.Errorf("register %s gateway: %w", reg.name, err)
+		}
 	}
 
 	rootHandler := http.NewServeMux()
@@ -332,6 +368,7 @@ func Run(ctx context.Context, cfg *Config, logger *slog.Logger) error {
 	}
 	rootHandler.Handle("/swagger-ui/", http.StripPrefix("/swagger-ui/",
 		swaggerUICacheControl(http.FileServer(http.FS(swaggerUISub)))))
+	rootHandler.Handle("/.well-known/acme-challenge/", acmeChallenger.Handler())
 	rootHandler.Handle("/", gwMux)
 
 	dispatch := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -1,4 +1,4 @@
-// Package clients defines the common surface every protocol adapter
+// Package agents defines the common surface every protocol adapter
 // implements so HUE can talk to a running service (xray, singbox,
 // wireguard, OpenVPN, …) the same way regardless of what that service
 // is on the wire.
@@ -7,14 +7,14 @@
 //
 //   - reports its Capabilities so the engine can probe what's supported
 //     before calling (no surprise UNIMPLEMENTED in the hot path);
-//   - returns clients.ErrUnsupported from any method whose capability
+//   - returns agents.ErrUnsupported from any method whose capability
 //     bit isn't set;
-//   - keeps protocol-specific config in its own pkg/clients/<name>
+//   - keeps protocol-specific config in its own pkg/agents/<name>
 //     package and leaks no proto-specific types through this interface.
 //
-// To add a new protocol, copy pkg/clients/template/ to
-// pkg/clients/<name>/ and fill in the bodies. See pkg/clients/README.md.
-package clients
+// To add a new protocol, copy pkg/agents/template/ to
+// pkg/agents/<name>/ and fill in the bodies. See pkg/agents/README.md.
+package agents
 
 import (
 	"context"
@@ -58,18 +58,18 @@ const (
 // Has reports whether c includes every bit in want.
 func (c Capability) Has(want Capability) bool { return c&want == want }
 
-// Client is the protocol-agnostic surface.
+// Agent is the protocol-agnostic surface.
 //
 // All methods take a context and respect its deadline / cancellation.
 // Implementations must be goroutine-safe — the engine calls Healthcheck
 // concurrently with ReadStats and Disconnect.
-type Client interface {
+type Agent interface {
 	// Name returns a stable, lowercase identifier for the protocol —
 	// "xray", "singbox", "wireguard", … Used in metrics, logs, and the
-	// hue.v1.Protocol enum.
+	// hue.v1.AgentKind enum.
 	Name() string
 
-	// Capabilities reports what this client implements.
+	// Capabilities reports what this agent implements.
 	Capabilities() Capability
 
 	// Healthcheck is a fast probe: typically a no-op RPC against the
@@ -98,11 +98,11 @@ type Client interface {
 	RemoveUser(ctx context.Context, u User) error
 
 	// SyncConfig pulls the adapter's current key-value config from HUE
-	// (via NodeService.SyncConfig), runs it through the adapter's
-	// ConfigGenerator, and applies the result locally. Reports whether
-	// the local config was actually replaced (false when the HUE
-	// response says "unchanged" — etag matched). Adapters that don't
-	// participate in config sync return ErrUnsupported.
+	// (via ConfigService.SyncConfig), runs it through the adapter's
+	// Renderer, and applies the result locally. Reports whether the
+	// local config was actually replaced (false when the HUE response
+	// says "unchanged" — etag matched). Adapters that don't participate
+	// in config sync return ErrUnsupported.
 	SyncConfig(ctx context.Context) (changed bool, err error)
 
 	// Close releases adapter resources (gRPC conns, file handles, …).
@@ -119,7 +119,7 @@ type ConfigUser struct {
 	Groups    []string
 }
 
-// ConfigSnapshot is what HUE returns from NodeService.SyncConfig. The
+// ConfigSnapshot is what HUE returns from ConfigService.SyncConfig. The
 // adapter's renderer substitutes the template using Vars and Users to
 // produce the protocol-specific config bytes the service consumes.
 //
@@ -151,7 +151,7 @@ type ConfigSnapshot struct {
 
 // SyncConfigFunc is the callback an adapter uses to fetch the current
 // config snapshot from HUE. Application code wires this to a real
-// huev1.NodeServiceClient.SyncConfig wrapper; tests inject a fake.
+// huev1.ConfigServiceClient.SyncConfig wrapper; tests inject a fake.
 // Keeping the adapter free of huev1 imports keeps the public package
 // tree light.
 type SyncConfigFunc func(ctx context.Context, currentEtag string) (ConfigSnapshot, error)
@@ -159,4 +159,4 @@ type SyncConfigFunc func(ctx context.Context, currentEtag string) (ConfigSnapsho
 // ErrUnsupported is the sentinel an adapter returns when a method is
 // called whose Capabilities bit is unset. Engine code should match it
 // with errors.Is and treat it as a fast no-op, not a failure.
-var ErrUnsupported = errors.New("clients: operation not supported by this protocol adapter")
+var ErrUnsupported = errors.New("agents: operation not supported by this protocol adapter")

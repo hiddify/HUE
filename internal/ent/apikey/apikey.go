@@ -21,8 +21,8 @@ const (
 	FieldUpdatedAt = "updated_at"
 	// FieldKind holds the string denoting the kind field in the database.
 	FieldKind = "kind"
-	// FieldOwnerID holds the string denoting the owner_id field in the database.
-	FieldOwnerID = "owner_id"
+	// FieldAgentID holds the string denoting the agent_id field in the database.
+	FieldAgentID = "agent_id"
 	// FieldName holds the string denoting the name field in the database.
 	FieldName = "name"
 	// FieldPrefix holds the string denoting the prefix field in the database.
@@ -33,6 +33,8 @@ const (
 	FieldLastUsedAt = "last_used_at"
 	// FieldRevokedAt holds the string denoting the revoked_at field in the database.
 	FieldRevokedAt = "revoked_at"
+	// FieldExpiresAt holds the string denoting the expires_at field in the database.
+	FieldExpiresAt = "expires_at"
 	// Table holds the table name of the apikey in the database.
 	Table = "api_keys"
 )
@@ -43,12 +45,13 @@ var Columns = []string{
 	FieldCreatedAt,
 	FieldUpdatedAt,
 	FieldKind,
-	FieldOwnerID,
+	FieldAgentID,
 	FieldName,
 	FieldPrefix,
 	FieldHash,
 	FieldLastUsedAt,
 	FieldRevokedAt,
+	FieldExpiresAt,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -68,8 +71,8 @@ var (
 	DefaultUpdatedAt func() time.Time
 	// UpdateDefaultUpdatedAt holds the default value on update for the "updated_at" field.
 	UpdateDefaultUpdatedAt func() time.Time
-	// OwnerIDValidator is a validator for the "owner_id" field. It is called by the builders before save.
-	OwnerIDValidator func(string) error
+	// AgentIDValidator is a validator for the "agent_id" field. It is called by the builders before save.
+	AgentIDValidator func(string) error
 	// NameValidator is a validator for the "name" field. It is called by the builders before save.
 	NameValidator func(string) error
 	// PrefixValidator is a validator for the "prefix" field. It is called by the builders before save.
@@ -85,9 +88,8 @@ type Kind string
 
 // Kind values.
 const (
-	KindManager Kind = "manager"
-	KindService Kind = "service"
-	KindNode    Kind = "node"
+	KindOwner Kind = "owner"
+	KindAgent Kind = "agent"
 )
 
 func (k Kind) String() string {
@@ -97,7 +99,7 @@ func (k Kind) String() string {
 // KindValidator is a validator for the "kind" field enum values. It is called by the builders before save.
 func KindValidator(k Kind) error {
 	switch k {
-	case KindManager, KindService, KindNode:
+	case KindOwner, KindAgent:
 		return nil
 	default:
 		return fmt.Errorf("apikey: invalid enum value for kind field: %q", k)
@@ -127,9 +129,9 @@ func ByKind(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldKind, opts...).ToFunc()
 }
 
-// ByOwnerID orders the results by the owner_id field.
-func ByOwnerID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldOwnerID, opts...).ToFunc()
+// ByAgentID orders the results by the agent_id field.
+func ByAgentID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAgentID, opts...).ToFunc()
 }
 
 // ByName orders the results by the name field.
@@ -155,4 +157,9 @@ func ByLastUsedAt(opts ...sql.OrderTermOption) OrderOption {
 // ByRevokedAt orders the results by the revoked_at field.
 func ByRevokedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRevokedAt, opts...).ToFunc()
+}
+
+// ByExpiresAt orders the results by the expires_at field.
+func ByExpiresAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldExpiresAt, opts...).ToFunc()
 }

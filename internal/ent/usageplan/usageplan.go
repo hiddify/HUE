@@ -20,8 +20,8 @@ const (
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
 	FieldUpdatedAt = "updated_at"
-	// FieldUserID holds the string denoting the user_id field in the database.
-	FieldUserID = "user_id"
+	// FieldClientID holds the string denoting the client_id field in the database.
+	FieldClientID = "client_id"
 	// FieldTotalLimit holds the string denoting the total_limit field in the database.
 	FieldTotalLimit = "total_limit"
 	// FieldUploadLimit holds the string denoting the upload_limit field in the database.
@@ -48,17 +48,17 @@ const (
 	FieldExpiresAt = "expires_at"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
-	// EdgeUser holds the string denoting the user edge name in mutations.
-	EdgeUser = "user"
+	// EdgeSubscriber holds the string denoting the subscriber edge name in mutations.
+	EdgeSubscriber = "subscriber"
 	// Table holds the table name of the usageplan in the database.
 	Table = "usage_plans"
-	// UserTable is the table that holds the user relation/edge.
-	UserTable = "usage_plans"
-	// UserInverseTable is the table name for the User entity.
-	// It exists in this package in order to avoid circular dependency with the "user" package.
-	UserInverseTable = "users"
-	// UserColumn is the table column denoting the user relation/edge.
-	UserColumn = "user_id"
+	// SubscriberTable is the table that holds the subscriber relation/edge.
+	SubscriberTable = "usage_plans"
+	// SubscriberInverseTable is the table name for the Subscriber entity.
+	// It exists in this package in order to avoid circular dependency with the "subscriber" package.
+	SubscriberInverseTable = "subscribers"
+	// SubscriberColumn is the table column denoting the subscriber relation/edge.
+	SubscriberColumn = "client_id"
 )
 
 // Columns holds all SQL columns for usageplan fields.
@@ -66,7 +66,7 @@ var Columns = []string{
 	FieldID,
 	FieldCreatedAt,
 	FieldUpdatedAt,
-	FieldUserID,
+	FieldClientID,
 	FieldTotalLimit,
 	FieldUploadLimit,
 	FieldDownloadLimit,
@@ -214,9 +214,9 @@ func ByUpdatedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUpdatedAt, opts...).ToFunc()
 }
 
-// ByUserID orders the results by the user_id field.
-func ByUserID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldUserID, opts...).ToFunc()
+// ByClientID orders the results by the client_id field.
+func ByClientID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldClientID, opts...).ToFunc()
 }
 
 // ByTotalLimit orders the results by the total_limit field.
@@ -284,16 +284,16 @@ func ByStatus(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldStatus, opts...).ToFunc()
 }
 
-// ByUserField orders the results by user field.
-func ByUserField(field string, opts ...sql.OrderTermOption) OrderOption {
+// BySubscriberField orders the results by subscriber field.
+func BySubscriberField(field string, opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborTerms(s, newUserStep(), sql.OrderByField(field, opts...))
+		sqlgraph.OrderByNeighborTerms(s, newSubscriberStep(), sql.OrderByField(field, opts...))
 	}
 }
-func newUserStep() *sqlgraph.Step {
+func newSubscriberStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
-		sqlgraph.To(UserInverseTable, FieldID),
-		sqlgraph.Edge(sqlgraph.M2O, true, UserTable, UserColumn),
+		sqlgraph.To(SubscriberInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, SubscriberTable, SubscriberColumn),
 	)
 }

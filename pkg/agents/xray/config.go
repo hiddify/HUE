@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"text/template"
 
-	"github.com/hiddify/hue/pkg/clients"
+	"github.com/hiddify/hue/pkg/agents"
 )
 
 // Renderer turns the ConfigSnapshot HUE returned (template + vars +
@@ -24,7 +24,7 @@ import (
 type Renderer interface {
 	Name() string
 	AcceptsFormat(format string) bool
-	Render(snap clients.ConfigSnapshot) ([]byte, error)
+	Render(snap agents.ConfigSnapshot) ([]byte, error)
 }
 
 // ApplyConfigFunc installs newly-rendered bytes onto the running
@@ -109,7 +109,7 @@ func (XrayJSON) AcceptsFormat(format string) bool {
 	return format == "" || format == "xray-json"
 }
 
-func (XrayJSON) Render(snap clients.ConfigSnapshot) ([]byte, error) {
+func (XrayJSON) Render(snap agents.ConfigSnapshot) ([]byte, error) {
 	if snap.Template == "" {
 		return nil, errors.New("xray: empty config template")
 	}
@@ -125,7 +125,7 @@ func (XrayJSON) Render(snap clients.ConfigSnapshot) ([]byte, error) {
 	var buf bytes.Buffer
 	if err := t.Execute(&buf, struct {
 		Vars  map[string]string
-		Users []clients.ConfigUser
+		Users []agents.ConfigUser
 	}{snap.Vars, snap.Users}); err != nil {
 		return nil, fmt.Errorf("xray: execute template: %w", err)
 	}

@@ -9,9 +9,9 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/hiddify/hue/internal/ent"
+	entagent "github.com/hiddify/hue/internal/ent/agent"
 	entnode "github.com/hiddify/hue/internal/ent/node"
-	entservice "github.com/hiddify/hue/internal/ent/service"
-	entuser "github.com/hiddify/hue/internal/ent/user"
+	entsubscriber "github.com/hiddify/hue/internal/ent/subscriber"
 	entusageplan "github.com/hiddify/hue/internal/ent/usageplan"
 	"github.com/hiddify/hue/internal/eventstore"
 	"github.com/hiddify/hue/internal/geo"
@@ -19,31 +19,34 @@ import (
 
 // Engine orchestrates ReportUsage from raw input to the persisted decision.
 //
-// Critical-section discipline (REVIEW.md H2): math runs under the per-user
-// lock; all DB writes happen inside one transaction; the lock is released
-// as soon as the transaction commits.
+// Critical-section discipline (REVIEW.md H2): math runs under the
+// per-subscriber lock; all DB writes happen inside one transaction;
+// the lock is released as soon as the transaction commits.
+//
+// Phase-2 vocabulary: Subscriber (was User) is the ent type; Client is
+// the API noun. Agent (was Service) is the wire-side process on a Node.
+// Reseller (was Manager) is the admin tree.
 type Engine struct {
 	db        *ent.Client
 	geo       *geo.Resolver
 	locks     *LockManager
 	sessions  *SessionTracker
 	penalties *PenaltyTracker
-	managers  *ManagerHierarchy
+	resellers *ResellerHierarchy
 	events    *eventstore.Store
-	now       func() time.Time // injectable for tests
+	now       func() time.Time
 }
 
-// EngineDeps groups Engine dependencies for the constructor. Pass real
-// values from main.go; pass test doubles from tests.
+// EngineDeps groups Engine dependencies for the constructor.
 type EngineDeps struct {
 	DB        *ent.Client
 	Geo       *geo.Resolver
 	Locks     *LockManager
 	Sessions  *SessionTracker
 	Penalties *PenaltyTracker
-	Managers  *ManagerHierarchy
+	Resellers *ResellerHierarchy
 	Events    *eventstore.Store
-	Now       func() time.Time // optional; defaults to time.Now
+	Now       func() time.Time
 }
 
 func NewEngine(d EngineDeps) *Engine {
@@ -57,7 +60,7 @@ func NewEngine(d EngineDeps) *Engine {
 		locks:     d.Locks,
 		sessions:  d.Sessions,
 		penalties: d.Penalties,
-		managers:  d.Managers,
+		resellers: d.Resellers,
 		events:    d.Events,
 		now:       now,
 	}
@@ -65,11 +68,11 @@ func NewEngine(d EngineDeps) *Engine {
 
 // ReportInput is what the gRPC layer translates an inbound UsageReport
 // into. ClientIP is nulled by the engine immediately after geo + session
-// processing; do not retain it in the caller.
+// processing.
 type ReportInput struct {
-	UserID    uuid.UUID
+	ClientID  uuid.UUID
 	NodeID    uuid.UUID
-	ServiceID uuid.UUID
+	AgentID   uuid.UUID
 	Upload    int64
 	Download  int64
 	SessionID string
@@ -78,8 +81,7 @@ type ReportInput struct {
 	At        time.Time // zero = engine.now()
 }
 
-// Decision mirrors proto's UsageDecision but lives in the service package
-// so the engine has no proto dependencies.
+// Decision mirrors proto's UsageDecision but lives in the service package.
 type Decision struct {
 	Accepted         bool
 	QuotaExceeded    bool
@@ -89,21 +91,20 @@ type Decision struct {
 	PenaltyUntil     time.Time
 }
 
-// ReportUsage is the hot path. Decision flow:
-//   1. Drop the IP into geo + session as early as possible.
+// ReportUsage decision flow:
+//   1. geo + session, then drop IP.
 //   2. Reject on penalty.
-//   3. Acquire per-user lock.
-//   4. Load user + active plan; reject if user inactive or plan expired.
+//   3. Acquire per-subscriber lock.
+//   4. Load subscriber + active plan; reject if inactive or plan expired.
 //   5. Apply node multiplier; project new counters; reject on quota.
-//   6. Project against manager hierarchy; reject on ancestor limit.
-//   7. Commit user + node + service + manager updates in one tx.
-//   8. Emit USAGE_RECORDED. On suspension, also emit USER_SUSPENDED.
+//   6. Project against reseller hierarchy.
+//   7. Commit subscriber + node + agent + reseller updates in one tx.
+//   8. Emit USAGE_RECORDED; on suspension also CLIENT_SUSPENDED.
 func (e *Engine) ReportUsage(ctx context.Context, in ReportInput) (Decision, error) {
 	if in.At.IsZero() {
 		in.At = e.now()
 	}
 
-	// Step 1: geo + session, then drop the IP.
 	var (
 		geoData geo.Result
 		ipHash  string
@@ -114,39 +115,34 @@ func (e *Engine) ReportUsage(ctx context.Context, in ReportInput) (Decision, err
 		in.ClientIP = ""
 	}
 
-	// Step 2: penalty short-circuit.
-	if active, until := e.penalties.Active(in.UserID, in.At); active {
+	if active, until := e.penalties.Active(in.ClientID, in.At); active {
 		return Decision{
-			Accepted:         false,
 			ShouldDisconnect: true,
-			Reason:           "user is in penalty",
+			Reason:           "client is in penalty",
 			PenaltyUntil:     until,
 		}, nil
 	}
 
-	// Step 3: per-user lock — all subsequent reads + writes are serialized
-	// for this user but parallel for everyone else.
-	release := e.locks.Acquire(in.UserID)
+	release := e.locks.Acquire(in.ClientID)
 	defer release()
 
-	// Step 4: load user + plan.
-	u, err := e.db.User.Query().
-		Where(entuser.ID(in.UserID)).
+	sub, err := e.db.Subscriber.Query().
+		Where(entsubscriber.ID(in.ClientID)).
 		WithActivePlan().
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return Decision{Reason: "user not found", ShouldDisconnect: true}, nil
+			return Decision{Reason: "client not found", ShouldDisconnect: true}, nil
 		}
-		return Decision{}, fmt.Errorf("load user: %w", err)
+		return Decision{}, fmt.Errorf("load subscriber: %w", err)
 	}
-	if u.Status != entuser.StatusActive {
+	if sub.Status != entsubscriber.StatusActive {
 		return Decision{
 			ShouldDisconnect: true,
-			Reason:           fmt.Sprintf("user status: %s", u.Status),
+			Reason:           fmt.Sprintf("client status: %s", sub.Status),
 		}, nil
 	}
-	plan := u.Edges.ActivePlan
+	plan := sub.Edges.ActivePlan
 	if plan == nil {
 		return Decision{Reason: "no active plan"}, nil
 	}
@@ -158,7 +154,6 @@ func (e *Engine) ReportUsage(ctx context.Context, in ReportInput) (Decision, err
 		}, nil
 	}
 
-	// Step 5: apply node multiplier; project new counters.
 	upload, download := in.Upload, in.Download
 	var node *ent.Node
 	if in.NodeID != uuid.Nil {
@@ -179,20 +174,34 @@ func (e *Engine) ReportUsage(ctx context.Context, in ReportInput) (Decision, err
 
 	switch {
 	case plan.TotalLimit > 0 && newTotal > plan.TotalLimit:
-		return e.suspendForQuota(ctx, u, plan, "total limit"), nil
+		return e.suspendForQuota(ctx, sub, plan, "total limit"), nil
 	case plan.UploadLimit > 0 && newUpload > plan.UploadLimit:
-		return e.suspendForQuota(ctx, u, plan, "upload limit"), nil
+		return e.suspendForQuota(ctx, sub, plan, "upload limit"), nil
 	case plan.DownloadLimit > 0 && newDownload > plan.DownloadLimit:
-		return e.suspendForQuota(ctx, u, plan, "download limit"), nil
+		return e.suspendForQuota(ctx, sub, plan, "download limit"), nil
 	}
 
-	// Step 5b: session check (post-IP drop, hash-based).
-	sessionCount := e.sessions.Touch(u.ID, ipHash, in.At)
+	// Node bandwidth ceiling — sum across all agents on this node.
+	if node != nil && node.BandwidthLimitBytes > 0 &&
+		node.CurrentTotal+total > node.BandwidthLimitBytes {
+		_ = e.events.Append(ctx, eventstore.Event{
+			Type:      "node_quota_reached",
+			NodeID:    node.ID.String(),
+			Timestamp: in.At,
+		})
+		return Decision{
+			QuotaExceeded:    true,
+			ShouldDisconnect: true,
+			Reason:           "node bandwidth limit",
+		}, nil
+	}
+
+	sessionCount := e.sessions.Touch(sub.ID, ipHash, in.At)
 	if plan.MaxConcurrent > 0 && int32(sessionCount) > plan.MaxConcurrent {
-		until := e.penalties.Apply(u.ID, in.At)
+		until := e.penalties.Apply(sub.ID, in.At)
 		_ = e.events.Append(ctx, eventstore.Event{
 			Type:      "penalty_applied",
-			UserID:    u.ID.String(),
+			ClientID:  sub.ID.String(),
 			PlanID:    plan.ID.String(),
 			Timestamp: in.At,
 			Metadata: map[string]any{
@@ -210,11 +219,10 @@ func (e *Engine) ReportUsage(ctx context.Context, in ReportInput) (Decision, err
 		}, nil
 	}
 
-	// Step 6: manager hierarchy projection.
-	if u.ManagerID != nil {
-		breach, reason, err := e.managers.CheckUsageDelta(ctx, *u.ManagerID, upload, download)
+	if sub.ResellerID != nil {
+		breach, reason, err := e.resellers.CheckUsageDelta(ctx, *sub.ResellerID, upload, download)
 		if err != nil {
-			return Decision{}, fmt.Errorf("manager check: %w", err)
+			return Decision{}, fmt.Errorf("reseller check: %w", err)
 		}
 		if breach != nil {
 			return Decision{
@@ -225,7 +233,6 @@ func (e *Engine) ReportUsage(ctx context.Context, in ReportInput) (Decision, err
 		}
 	}
 
-	// Step 7: persist in one transaction.
 	tx, err := e.db.Tx(ctx)
 	if err != nil {
 		return Decision{}, fmt.Errorf("begin tx: %w", err)
@@ -245,10 +252,10 @@ func (e *Engine) ReportUsage(ctx context.Context, in ReportInput) (Decision, err
 		Save(ctx); err != nil {
 		return Decision{}, fmt.Errorf("update plan: %w", err)
 	}
-	if _, err := tx.User.UpdateOneID(u.ID).
+	if _, err := tx.Subscriber.UpdateOneID(sub.ID).
 		SetLastConnectionAt(in.At).
 		Save(ctx); err != nil {
-		return Decision{}, fmt.Errorf("update user: %w", err)
+		return Decision{}, fmt.Errorf("update subscriber: %w", err)
 	}
 	if node != nil {
 		if _, err := tx.Node.UpdateOneID(node.ID).
@@ -259,18 +266,18 @@ func (e *Engine) ReportUsage(ctx context.Context, in ReportInput) (Decision, err
 			return Decision{}, fmt.Errorf("update node: %w", err)
 		}
 	}
-	if in.ServiceID != uuid.Nil {
-		if _, err := tx.Service.Update().
-			Where(entservice.ID(in.ServiceID)).
+	if in.AgentID != uuid.Nil {
+		if _, err := tx.Agent.Update().
+			Where(entagent.ID(in.AgentID)).
 			AddCurrentTotal(total).
 			AddCurrentUpload(upload).
 			AddCurrentDownload(download).
 			Save(ctx); err != nil && !ent.IsNotFound(err) {
-			return Decision{}, fmt.Errorf("update service: %w", err)
+			return Decision{}, fmt.Errorf("update agent: %w", err)
 		}
 	}
-	if u.ManagerID != nil {
-		if err := e.managers.ApplyUsageDelta(ctx, tx, *u.ManagerID, upload, download); err != nil {
+	if sub.ResellerID != nil {
+		if err := e.resellers.ApplyUsageDelta(ctx, tx, *sub.ResellerID, upload, download); err != nil {
 			return Decision{}, err
 		}
 	}
@@ -279,13 +286,12 @@ func (e *Engine) ReportUsage(ctx context.Context, in ReportInput) (Decision, err
 	}
 	commit = true
 
-	// Step 8: emit event after commit (best-effort; do not fail the report).
 	_ = e.events.Append(ctx, eventstore.Event{
 		Type:      "usage_recorded",
-		UserID:    u.ID.String(),
+		ClientID:  sub.ID.String(),
 		PlanID:    plan.ID.String(),
 		NodeID:    nodeIDStr(node),
-		ServiceID: serviceIDStr(in.ServiceID),
+		AgentID:   nilableIDStr(in.AgentID),
 		Tags:      in.Tags,
 		Timestamp: in.At,
 		Metadata: map[string]any{
@@ -298,19 +304,15 @@ func (e *Engine) ReportUsage(ctx context.Context, in ReportInput) (Decision, err
 	return Decision{Accepted: true}, nil
 }
 
-// suspendForQuota marks user as quota-used + emits the suspension event.
-// On any DB error here we still report the decision — the goal is to
-// disconnect the user; an internal write failure shouldn't let them keep
-// going.
-func (e *Engine) suspendForQuota(ctx context.Context, u *ent.User, plan *ent.UsagePlan, reason string) Decision {
-	_, err := e.db.User.UpdateOneID(u.ID).SetStatus(entuser.StatusQuotaUsed).Save(ctx)
+func (e *Engine) suspendForQuota(ctx context.Context, sub *ent.Subscriber, plan *ent.UsagePlan, reason string) Decision {
+	_, err := e.db.Subscriber.UpdateOneID(sub.ID).SetStatus(entsubscriber.StatusQuotaUsed).Save(ctx)
 	if err != nil && !errors.Is(err, context.Canceled) {
 		// Log only — return decision regardless.
 	}
 	_, _ = e.db.UsagePlan.UpdateOneID(plan.ID).SetStatus(entusageplan.StatusQuotaUsed).Save(ctx)
 	_ = e.events.Append(ctx, eventstore.Event{
-		Type:      "user_suspended",
-		UserID:    u.ID.String(),
+		Type:      "client_suspended",
+		ClientID:  sub.ID.String(),
 		PlanID:    plan.ID.String(),
 		Timestamp: e.now(),
 		Metadata:  map[string]any{"reason": reason},
@@ -329,7 +331,7 @@ func nodeIDStr(n *ent.Node) string {
 	return n.ID.String()
 }
 
-func serviceIDStr(id uuid.UUID) string {
+func nilableIDStr(id uuid.UUID) string {
 	if id == uuid.Nil {
 		return ""
 	}

@@ -101,8 +101,42 @@ test-integration: ## Integration tests against testcontainers Postgres
 	$(GO) test -race -tags=integration -coverprofile=coverage-integration.out ./internal/server/integration/...
 
 .PHONY: test-e2e
-test-e2e: ## End-to-end tests via docker compose
+test-e2e: ## End-to-end tests: real xray-core binary + testcontainers Postgres
+	$(GO) test -race -tags=e2e -timeout=10m ./test/e2e/...
+
+.PHONY: test-e2e-docker
+test-e2e-docker: ## Legacy docker-compose stack-up E2E
 	docker compose -f deployments/docker/docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from e2e
+
+# XRAY_VERSION is the github.com/XTLS/Xray-core release tag to fetch.
+# Override on the command line: `make e2e-deps XRAY_VERSION=v25.3.6`.
+XRAY_VERSION ?= v25.3.6
+
+.PHONY: e2e-deps
+e2e-deps: ## Download xray-core binary into test/e2e/testdata/xray/<platform>/
+	@mkdir -p test/e2e/testdata/xray
+	@GOOS=$$(go env GOOS); GOARCH=$$(go env GOARCH); \
+	case $$GOOS-$$GOARCH in \
+	  linux-amd64)   ZIP=Xray-linux-64.zip ;; \
+	  linux-arm64)   ZIP=Xray-linux-arm64-v8a.zip ;; \
+	  darwin-amd64)  ZIP=Xray-macos-64.zip ;; \
+	  darwin-arm64)  ZIP=Xray-macos-arm64-v8a.zip ;; \
+	  windows-amd64) ZIP=Xray-windows-64.zip ;; \
+	  *) echo "unsupported platform: $$GOOS-$$GOARCH"; exit 1 ;; \
+	esac; \
+	DEST="test/e2e/testdata/xray/$$GOOS-$$GOARCH"; \
+	mkdir -p "$$DEST"; \
+	if [ -x "$$DEST/xray" ] || [ -x "$$DEST/xray.exe" ]; then \
+	  echo "xray already present in $$DEST"; exit 0; \
+	fi; \
+	URL="https://github.com/XTLS/Xray-core/releases/download/$(XRAY_VERSION)/$$ZIP"; \
+	echo "Downloading $$URL"; \
+	TMP=$$(mktemp -d); \
+	curl -fsSL "$$URL" -o "$$TMP/xray.zip"; \
+	unzip -q "$$TMP/xray.zip" -d "$$DEST"; \
+	rm -rf "$$TMP"; \
+	chmod +x "$$DEST/xray" "$$DEST/xray.exe" 2>/dev/null || true; \
+	echo "xray installed in $$DEST"
 
 .PHONY: test-fuzz
 test-fuzz: ## Short fuzz run (CI smoke); use FUZZTIME=4h for nightly

@@ -13,7 +13,7 @@ mkdir -p secrets certs geo
 echo 'supersecret'                                          > secrets/pg_password
 printf 'postgres://hue:supersecret@postgres:5432/hue?sslmode=disable' \
                                                             > secrets/db_url
-echo "mgr_$(openssl rand -base64 18 | tr -d '/+=' | tr 'A-Z' 'a-z')" \
+echo "own_$(openssl rand -base64 18 | tr -d '/+=' | tr 'A-Z' 'a-z')" \
                                                             > secrets/bootstrap_token
 
 # TLS cert (production: use a real cert; for local, mkcert is fine)
@@ -122,9 +122,33 @@ that renews automatically.
 
 ### Bootstrap key
 
-For the very first deploy, set `bootstrap_token` in `hue-secrets`. After
-the first pod is `Ready`, edit the Secret and remove that key, then
-`kubectl rollout restart deployment/hue` so subsequent pods start
-without it. If you forget, it's harmless on every restart (the
-bootstrap function is idempotent — it leaves an existing manager key
-alone) but a leak gets riskier the longer it stays around.
+For the very first deploy, set `bootstrap_token` in `hue-secrets`
+(plaintext must start with `own_`). After the first pod is `Ready`,
+edit the Secret and remove that key, then `kubectl rollout restart
+deployment/hue` so subsequent pods start without it. If you forget,
+it's harmless on every restart (the bootstrap function is idempotent
+— it leaves an existing Owner key alone) but a leak gets riskier the
+longer it stays around.
+
+### Encryption key
+
+Production also needs `HUE_PASSWORD_ENC_KEY` — a 64-hex-char (32-byte)
+random value. AES-256-GCM at-rest encryption falls through to
+plaintext when empty (CI/dev fallback), so make sure to set it before
+storing real Client passwords or ACME private keys.
+
+```bash
+echo "$(openssl rand -hex 32)" > secrets/password_enc_key
+```
+
+Mount as `HUE_PASSWORD_ENC_KEY_FILE=/run/secrets/password_enc_key` in
+Docker, or as a `secretKeyRef` in the Kubernetes Deployment.
+
+### ACME
+
+Set `HUE_ACME_CONTACT_EMAIL` to enable `DomainCertificateService.RequestACME`.
+HUE serves the HTTP-01 challenge at `/.well-known/acme-challenge/` on
+its own listener — make sure your Service/Ingress routes that path
+without rewriting. For testing, also set
+`HUE_ACME_DIRECTORY_URL=https://acme-staging-v02.api.letsencrypt.org/directory`
+to avoid Let's Encrypt's production rate limit.

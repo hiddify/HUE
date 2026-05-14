@@ -39,7 +39,7 @@ Every gRPC method emits one log line at the end of the call:
   "time": "2026-05-01T03:42:11.123Z",
   "level": "INFO",
   "msg": "rpc",
-  "method": "/hue.v1.AdminService/CreateUser",
+  "method": "/hue.v1.ResellerClientService/CreateClient",
   "dur": "12.4ms",
   "code": "OK"
 }
@@ -79,29 +79,42 @@ release away.
 
 ## Common runbook entries
 
-### Spike in `quota_used` user statuses
+### Spike in `quota_used` plan statuses
 
-A user is reaching their plan limit. Check
-`SELECT id, current_total, total_limit, status FROM usage_plans WHERE
-status = 'quota_used' ORDER BY updated_at DESC LIMIT 20;`. If the user
+A Client is reaching their plan limit. Check
+`SELECT id, client_id, current_total, total_limit, status FROM usage_plans WHERE
+status = 'quota_used' ORDER BY updated_at DESC LIMIT 20;`. If the Client
 should keep going, either bump their plan limits or call
-`POST /v1/users/{user_id}:resetUsage` once
-[the RPC is implemented](#known-unimplemented-rpcs).
+`POST /v1/clients/{client_id}:resetUsage`.
 
 ### Penalty storm
 
-Symptoms: many users in `penalty` status simultaneously. Most likely
-cause is misconfigured `max_concurrent` — a user's app reconnects from
-multiple IPs (mobile network NAT, VPN failover) and hits the limit.
+Symptoms: many Clients in `penalty` status simultaneously. Most likely
+cause is misconfigured `max_concurrent` — a Client app reconnects from
+multiple IPs (mobile-network NAT, VPN failover) and hits the limit.
 
 Check the configured values:
 
 ```sql
-SELECT user_id, max_concurrent, current_total
+SELECT client_id, max_concurrent, current_total
 FROM usage_plans WHERE status = 'penalty';
 ```
 
-The penalty store is in-memory; restart drops it (also see [PRD §3.2](../PRD.md)).
+The penalty store is in-memory; restart drops it.
+
+### Lockout flood
+
+Symptoms: a surge of `login_locked_out` events for one `(ip, username)`
+pair. Check via:
+
+```bash
+curl -sk -H "Authorization: Bearer $OWNER" \
+  "$BASE/v1/events?type=login_locked_out&page_size=50"
+```
+
+Likely a brute-force attempt or a misconfigured client. Lockout state
+is in-memory (LRU); restart clears it. To raise the threshold, change
+the `auth.NewLockout(maxAttempts, window)` call site in `hue.go`.
 
 ### A subscriber is dropping events
 
@@ -127,18 +140,17 @@ front Postgres with PgBouncer.
 
 ## Known-unimplemented RPCs
 
-Today the following RPCs return `Unimplemented` from the embedded
-default servers; track them as roadmap items:
+These return `Unimplemented` or stubbed responses today; track as
+roadmap items:
 
-- `AdminService.UpdateNode`, `UpdateService`, `UpdateManager` — partial-update with `update_mask` not wired.
-- `AdminService.ResetUserUsage`, `ResetNodeUsage`, `ResetManagerUsage`.
-- `AdminService.GetUsagePlan`, `ListUsagePlans`, `GetActiveUsagePlan`.
-- `AdminService.ListEvents`, `StreamEvents`.
-- `AdminService.CreateService`, `GetService`, `ListServices`, `DeleteService`.
-- `UsageService.SyncUsers`.
-- `NodeService.AuthenticateNode`, `Heartbeat`.
+- `AdminService.StreamEvents` — gateway route exists; the server
+  returns an empty stream.
+- `ConfigService.Heartbeat` — `disconnect_client_ids` hints are
+  always empty.
+- `DomainCertificateService.RequestACME` — returns `Unimplemented`
+  until `HUE_ACME_CONTACT_EMAIL` is set; functional once set.
 
-Adding any of these is the same pattern: write the proto-to-service
-shim in `internal/server/<service>.go` and add the business logic to
-`internal/service/`. No proto edits, no code generation, no manual
-HTTP route.
+Adding any of these is the same pattern: write the proto-to-server
+shim in `internal/server/<file>.go` and put the business logic in
+`internal/service/`. No proto edits, no codegen, no manual HTTP route
+wiring.

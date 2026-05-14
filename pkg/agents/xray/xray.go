@@ -43,7 +43,7 @@ import (
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/hiddify/hue/pkg/clients"
+	"github.com/hiddify/hue/pkg/agents"
 )
 
 // Config is the per-instance config for one xray-core API endpoint.
@@ -71,7 +71,7 @@ type Config struct {
 	// this service. Application code wires it to a real
 	// huev1.NodeServiceClient.SyncConfig wrapper; tests pass a fake.
 	// nil disables config sync.
-	SyncConfig clients.SyncConfigFunc
+	SyncConfig agents.SyncConfigFunc
 
 	// ApplyConfig installs newly-generated config onto the running
 	// xray process. nil = log + drop (suitable for tests; production
@@ -143,14 +143,14 @@ func (c *Client) Name() string { return "xray" }
 
 // Capabilities reports what's wired today. CapConfigSync is on iff a
 // SyncConfig callback was supplied; CapHealthcheck is always on.
-func (c *Client) Capabilities() clients.Capability {
-	caps := clients.CapHealthcheck
+func (c *Client) Capabilities() agents.Capability {
+	caps := agents.CapHealthcheck
 	if c.cfg.SyncConfig != nil {
-		caps |= clients.CapConfigSync
+		caps |= agents.CapConfigSync
 	}
 	return caps
 	// Once the StatsService / HandlerService wiring lands, OR in:
-	// clients.CapStats | clients.CapDisconnect | clients.CapProvision
+	// agents.CapStats | agents.CapDisconnect | agents.CapProvision
 }
 
 // Healthcheck triggers a connection state check.
@@ -170,20 +170,20 @@ func (c *Client) Healthcheck(ctx context.Context) error {
 	}
 }
 
-func (c *Client) ReadStats(_ context.Context) ([]clients.UsageDelta, error) {
-	return nil, clients.ErrUnsupported
+func (c *Client) ReadStats(_ context.Context) ([]agents.UsageDelta, error) {
+	return nil, agents.ErrUnsupported
 }
 
-func (c *Client) Disconnect(_ context.Context, _ clients.User) error {
-	return clients.ErrUnsupported
+func (c *Client) Disconnect(_ context.Context, _ agents.User) error {
+	return agents.ErrUnsupported
 }
 
-func (c *Client) AddUser(_ context.Context, _ clients.User, _ string) error {
-	return clients.ErrUnsupported
+func (c *Client) AddUser(_ context.Context, _ agents.User, _ string) error {
+	return agents.ErrUnsupported
 }
 
-func (c *Client) RemoveUser(_ context.Context, _ clients.User) error {
-	return clients.ErrUnsupported
+func (c *Client) RemoveUser(_ context.Context, _ agents.User) error {
+	return agents.ErrUnsupported
 }
 
 // SyncConfig pulls the adapter's current config snapshot from HUE,
@@ -195,7 +195,7 @@ func (c *Client) RemoveUser(_ context.Context, _ clients.User) error {
 // returns Changed=false and SyncConfig is a no-op (no render, no apply).
 func (c *Client) SyncConfig(ctx context.Context) (bool, error) {
 	if c.cfg.SyncConfig == nil {
-		return false, clients.ErrUnsupported
+		return false, agents.ErrUnsupported
 	}
 
 	c.mu.Lock()

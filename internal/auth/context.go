@@ -6,13 +6,33 @@ import (
 	"github.com/google/uuid"
 )
 
+// PrincipalKind covers both API-key actors (Owner, Agent) and JWT
+// actors (Subscriber/Client, Reseller). The auth interceptor sets it
+// uniformly so service-layer code reads one field.
+type PrincipalKind string
+
+const (
+	PrincipalKindOwner      PrincipalKind = "owner"
+	PrincipalKindAgent      PrincipalKind = "agent"
+	PrincipalKindReseller   PrincipalKind = "reseller"
+	PrincipalKindSubscriber PrincipalKind = "subscriber"
+)
+
 // Actor identifies the authenticated principal that made the request.
-// Service-layer code uses this to enforce per-actor authorization (e.g.,
-// "manager X can only modify users where manager_id = X").
+//
+//   * Kind         — which principal type.
+//   * SubjectID    — the entity row id (Subscriber.id / Reseller.id /
+//                    Agent.id; uuid.Nil when Kind == Owner since
+//                    owner is singleton).
+//   * KeyID        — ApiKey.id for API-key auth; uuid.Nil for JWT auth.
+//   * SudoTargetID — when Kind == Owner and the owner sudoed via
+//                    AuthService.Login, this is the impersonated
+//                    principal id. Audit trail.
 type Actor struct {
-	Kind    ActorKind
-	OwnerID uuid.UUID // manager_id / service_id / node_id
-	KeyID   uuid.UUID // api_key.id used (audit trail)
+	Kind         PrincipalKind
+	SubjectID    uuid.UUID
+	KeyID        uuid.UUID
+	SudoTargetID uuid.UUID
 }
 
 type actorCtxKey struct{}
@@ -22,16 +42,14 @@ func WithActor(ctx context.Context, a Actor) context.Context {
 	return context.WithValue(ctx, actorCtxKey{}, a)
 }
 
-// FromContext extracts the Actor; the second return is false when the
-// request is unauthenticated (e.g., health check).
+// FromContext extracts the Actor; ok=false on unauthenticated routes.
 func FromContext(ctx context.Context) (Actor, bool) {
 	a, ok := ctx.Value(actorCtxKey{}).(Actor)
 	return a, ok
 }
 
-// MustFromContext is the convenience accessor used by handlers that have
-// already passed through the auth interceptor; it panics otherwise.
-// Reserve for code paths that are unreachable on unauthenticated routes.
+// MustFromContext panics if no Actor — reserve for handlers reachable
+// only via the auth interceptor.
 func MustFromContext(ctx context.Context) Actor {
 	a, ok := FromContext(ctx)
 	if !ok {

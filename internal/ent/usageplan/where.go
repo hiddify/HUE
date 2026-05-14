@@ -66,9 +66,9 @@ func UpdatedAt(v time.Time) predicate.UsagePlan {
 	return predicate.UsagePlan(sql.FieldEQ(FieldUpdatedAt, v))
 }
 
-// UserID applies equality check predicate on the "user_id" field. It's identical to UserIDEQ.
-func UserID(v uuid.UUID) predicate.UsagePlan {
-	return predicate.UsagePlan(sql.FieldEQ(FieldUserID, v))
+// ClientID applies equality check predicate on the "client_id" field. It's identical to ClientIDEQ.
+func ClientID(v uuid.UUID) predicate.UsagePlan {
+	return predicate.UsagePlan(sql.FieldEQ(FieldClientID, v))
 }
 
 // TotalLimit applies equality check predicate on the "total_limit" field. It's identical to TotalLimitEQ.
@@ -206,24 +206,24 @@ func UpdatedAtLTE(v time.Time) predicate.UsagePlan {
 	return predicate.UsagePlan(sql.FieldLTE(FieldUpdatedAt, v))
 }
 
-// UserIDEQ applies the EQ predicate on the "user_id" field.
-func UserIDEQ(v uuid.UUID) predicate.UsagePlan {
-	return predicate.UsagePlan(sql.FieldEQ(FieldUserID, v))
+// ClientIDEQ applies the EQ predicate on the "client_id" field.
+func ClientIDEQ(v uuid.UUID) predicate.UsagePlan {
+	return predicate.UsagePlan(sql.FieldEQ(FieldClientID, v))
 }
 
-// UserIDNEQ applies the NEQ predicate on the "user_id" field.
-func UserIDNEQ(v uuid.UUID) predicate.UsagePlan {
-	return predicate.UsagePlan(sql.FieldNEQ(FieldUserID, v))
+// ClientIDNEQ applies the NEQ predicate on the "client_id" field.
+func ClientIDNEQ(v uuid.UUID) predicate.UsagePlan {
+	return predicate.UsagePlan(sql.FieldNEQ(FieldClientID, v))
 }
 
-// UserIDIn applies the In predicate on the "user_id" field.
-func UserIDIn(vs ...uuid.UUID) predicate.UsagePlan {
-	return predicate.UsagePlan(sql.FieldIn(FieldUserID, vs...))
+// ClientIDIn applies the In predicate on the "client_id" field.
+func ClientIDIn(vs ...uuid.UUID) predicate.UsagePlan {
+	return predicate.UsagePlan(sql.FieldIn(FieldClientID, vs...))
 }
 
-// UserIDNotIn applies the NotIn predicate on the "user_id" field.
-func UserIDNotIn(vs ...uuid.UUID) predicate.UsagePlan {
-	return predicate.UsagePlan(sql.FieldNotIn(FieldUserID, vs...))
+// ClientIDNotIn applies the NotIn predicate on the "client_id" field.
+func ClientIDNotIn(vs ...uuid.UUID) predicate.UsagePlan {
+	return predicate.UsagePlan(sql.FieldNotIn(FieldClientID, vs...))
 }
 
 // TotalLimitEQ applies the EQ predicate on the "total_limit" field.
@@ -736,21 +736,21 @@ func StatusNotIn(vs ...Status) predicate.UsagePlan {
 	return predicate.UsagePlan(sql.FieldNotIn(FieldStatus, vs...))
 }
 
-// HasUser applies the HasEdge predicate on the "user" edge.
-func HasUser() predicate.UsagePlan {
+// HasSubscriber applies the HasEdge predicate on the "subscriber" edge.
+func HasSubscriber() predicate.UsagePlan {
 	return predicate.UsagePlan(func(s *sql.Selector) {
 		step := sqlgraph.NewStep(
 			sqlgraph.From(Table, FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, UserTable, UserColumn),
+			sqlgraph.Edge(sqlgraph.M2O, true, SubscriberTable, SubscriberColumn),
 		)
 		sqlgraph.HasNeighbors(s, step)
 	})
 }
 
-// HasUserWith applies the HasEdge predicate on the "user" edge with a given conditions (other predicates).
-func HasUserWith(preds ...predicate.User) predicate.UsagePlan {
+// HasSubscriberWith applies the HasEdge predicate on the "subscriber" edge with a given conditions (other predicates).
+func HasSubscriberWith(preds ...predicate.Subscriber) predicate.UsagePlan {
 	return predicate.UsagePlan(func(s *sql.Selector) {
-		step := newUserStep()
+		step := newSubscriberStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

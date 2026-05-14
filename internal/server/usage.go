@@ -14,7 +14,7 @@ import (
 	"github.com/hiddify/hue/internal/service"
 )
 
-// UsageServer implements hue.v1.UsageService.
+// UsageServer implements hue.v1.UsageService — Agent-only data plane.
 type UsageServer struct {
 	huev1.UnimplementedUsageServiceServer
 
@@ -27,9 +27,9 @@ func (s *UsageServer) ReportUsage(ctx context.Context, req *huev1.ReportUsageReq
 	if in == nil {
 		return nil, status.Error(codes.InvalidArgument, "report is required")
 	}
-	uid, err := uuid.Parse(in.GetUserId())
+	clientID, err := uuid.Parse(in.GetClientId())
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "user_id: %v", err)
+		return nil, status.Errorf(codes.InvalidArgument, "client_id: %v", err)
 	}
 	var nodeID uuid.UUID
 	if v := in.GetNodeId(); v != "" {
@@ -37,10 +37,10 @@ func (s *UsageServer) ReportUsage(ctx context.Context, req *huev1.ReportUsageReq
 			return nil, status.Errorf(codes.InvalidArgument, "node_id: %v", err)
 		}
 	}
-	var serviceID uuid.UUID
-	if v := in.GetServiceId(); v != "" {
-		if serviceID, err = uuid.Parse(v); err != nil {
-			return nil, status.Errorf(codes.InvalidArgument, "service_id: %v", err)
+	var agentID uuid.UUID
+	if v := in.GetAgentId(); v != "" {
+		if agentID, err = uuid.Parse(v); err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "agent_id: %v", err)
 		}
 	}
 	at := time.Now().UTC()
@@ -49,9 +49,9 @@ func (s *UsageServer) ReportUsage(ctx context.Context, req *huev1.ReportUsageReq
 	}
 
 	d, err := s.engine.ReportUsage(ctx, service.ReportInput{
-		UserID:    uid,
+		ClientID:  clientID,
 		NodeID:    nodeID,
-		ServiceID: serviceID,
+		AgentID:   agentID,
 		Upload:    in.GetUpload(),
 		Download:  in.GetDownload(),
 		SessionID: in.GetSessionId(),
@@ -71,8 +71,6 @@ func (s *UsageServer) BatchReportUsage(ctx context.Context, req *huev1.BatchRepo
 	for _, r := range reports {
 		resp, err := s.ReportUsage(ctx, &huev1.ReportUsageRequest{Report: r})
 		if err != nil {
-			// Treat per-report failures as rejections rather than aborting
-			// the batch; the caller can re-submit individual failures.
 			out.Decisions = append(out.Decisions, &huev1.UsageDecision{
 				Accepted: false,
 				Reason:   err.Error(),
