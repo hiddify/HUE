@@ -26,6 +26,7 @@ import (
 	entreseller "github.com/hiddify/hue/internal/ent/reseller"
 	entsubscriber "github.com/hiddify/hue/internal/ent/subscriber"
 	entusageplan "github.com/hiddify/hue/internal/ent/usageplan"
+	"github.com/hiddify/hue/internal/eventstore"
 )
 
 // ---------- Time helpers ----------
@@ -406,6 +407,79 @@ func apiKeyToProto(k *ent.ApiKey) *huev1.ApiKey {
 		ExpiresAt:  tsProto(k.ExpiresAt),
 		Lifecycle:  lifecycleProto(k.CreatedAt, k.UpdatedAt),
 	}
+}
+
+// ---------- Events ----------
+
+var eventTypeStringToProto = map[string]huev1.EventType{
+	"client_connected":       huev1.EventType_EVENT_TYPE_CLIENT_CONNECTED,
+	"client_disconnected":    huev1.EventType_EVENT_TYPE_CLIENT_DISCONNECTED,
+	"client_suspended":       huev1.EventType_EVENT_TYPE_CLIENT_SUSPENDED,
+	"client_activated":       huev1.EventType_EVENT_TYPE_CLIENT_ACTIVATED,
+	"client_limit_reached":   huev1.EventType_EVENT_TYPE_CLIENT_LIMIT_REACHED,
+	"usage_recorded":         huev1.EventType_EVENT_TYPE_USAGE_RECORDED,
+	"usage_plan_expired":     huev1.EventType_EVENT_TYPE_USAGE_PLAN_EXPIRED,
+	"usage_plan_quota_used":  huev1.EventType_EVENT_TYPE_USAGE_PLAN_QUOTA_USED,
+	"usage_plan_started":     huev1.EventType_EVENT_TYPE_USAGE_PLAN_STARTED,
+	"penalty_applied":        huev1.EventType_EVENT_TYPE_PENALTY_APPLIED,
+	"penalty_expired":        huev1.EventType_EVENT_TYPE_PENALTY_EXPIRED,
+	"node_reset":             huev1.EventType_EVENT_TYPE_NODE_RESET,
+	"node_quota_reached":     huev1.EventType_EVENT_TYPE_NODE_QUOTA_REACHED,
+	"reseller_expired":       huev1.EventType_EVENT_TYPE_RESELLER_EXPIRED,
+	"reseller_limit_reached": huev1.EventType_EVENT_TYPE_RESELLER_LIMIT_REACHED,
+}
+
+var eventTypeProtoToString map[huev1.EventType]string
+
+func init() {
+	eventTypeProtoToString = make(map[huev1.EventType]string, len(eventTypeStringToProto))
+	for s, p := range eventTypeStringToProto {
+		eventTypeProtoToString[p] = s
+	}
+}
+
+// EventTypeToString converts a proto EventType enum to the canonical string
+// used by eventstore. Returns "" for UNSPECIFIED or unknown values.
+func EventTypeToString(t huev1.EventType) string {
+	return eventTypeProtoToString[t]
+}
+
+// eventFromStore maps an in-memory eventstore.Event to the proto wire shape.
+func eventFromStore(e eventstore.Event) *huev1.Event {
+	out := &huev1.Event{
+		Id:         e.ID.String(),
+		Type:       eventTypeStringToProto[e.Type],
+		ClientId:   e.ClientID,
+		PlanId:     e.PlanID,
+		NodeId:     e.NodeID,
+		AgentId:    e.AgentID,
+		ResellerId: e.ResellerID,
+		Tags:       e.Tags,
+		Timestamp:  timestamppb.New(e.Timestamp),
+	}
+	if len(e.Metadata) > 0 {
+		out.Metadata, _ = mapToStructpb(e.Metadata)
+	}
+	return out
+}
+
+// entEventToProto maps a DB-loaded ent.Event to the proto wire shape.
+func entEventToProto(e *ent.Event) *huev1.Event {
+	out := &huev1.Event{
+		Id:         e.ID.String(),
+		Type:       eventTypeStringToProto[string(e.Type)],
+		ClientId:   e.ClientID,
+		PlanId:     e.PlanID,
+		NodeId:     e.NodeID,
+		AgentId:    e.AgentID,
+		ResellerId: e.ResellerID,
+		Tags:       e.Tags,
+		Timestamp:  timestamppb.New(e.Ts),
+	}
+	if len(e.Metadata) > 0 {
+		out.Metadata, _ = mapToStructpb(e.Metadata)
+	}
+	return out
 }
 
 // ---------- Cert ----------

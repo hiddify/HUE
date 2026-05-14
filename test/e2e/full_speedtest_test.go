@@ -214,7 +214,40 @@ func TestFullSpeedtest(t *testing.T) {
 	assert.GreaterOrEqual(t, current.GetTotalBytes(), int64(1024+4096),
 		"node total advanced past at least the report's bytes")
 
-	_ = bob // Reserved for an exhaustion test in a follow-up commit.
+	// --- Bob quota exhaustion ---
+	// Bob's plan cap is 4096 bytes. First report stays under; second pushes past.
+	bobReport1, err := env.Usage.ReportUsage(agentCtx, &huev1.ReportUsageRequest{
+		Report: &huev1.UsageReport{
+			ClientId:  bob.GetInfo().GetId(),
+			NodeId:    node.GetId(),
+			AgentId:   agentID,
+			Upload:    1024,
+			Download:  2048,
+			SessionId: "e2e-bob-1",
+			ClientIp:  "203.0.113.6",
+		},
+	})
+	require.NoError(t, err, "ReportUsage bob (under limit)")
+	require.NotNil(t, bobReport1.GetDecision())
+	assert.True(t, bobReport1.GetDecision().GetAccepted(), "bob under-limit accepted")
+	assert.False(t, bobReport1.GetDecision().GetShouldDisconnect(), "bob not yet disconnected")
+
+	// Second report: cumulative 1024+2048+1+2048 = 5121 > 4096 → quota trip.
+	bobReport2, err := env.Usage.ReportUsage(agentCtx, &huev1.ReportUsageRequest{
+		Report: &huev1.UsageReport{
+			ClientId:  bob.GetInfo().GetId(),
+			NodeId:    node.GetId(),
+			AgentId:   agentID,
+			Upload:    1,
+			Download:  2048,
+			SessionId: "e2e-bob-2",
+			ClientIp:  "203.0.113.6",
+		},
+	})
+	require.NoError(t, err, "ReportUsage bob (over limit)")
+	require.NotNil(t, bobReport2.GetDecision())
+	assert.True(t, bobReport2.GetDecision().GetShouldDisconnect(), "bob quota exhausted → disconnect")
+	assert.True(t, bobReport2.GetDecision().GetQuotaExceeded(), "quota exceeded flag set")
 }
 
 // attachUsagePlan creates a UsagePlan row for the given client UUID and

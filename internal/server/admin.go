@@ -5,6 +5,8 @@ import (
 	"log/slog"
 
 	"github.com/google/uuid"
+	entsql "entgo.io/ent/dialect/sql"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -12,6 +14,7 @@ import (
 	huev1 "github.com/hiddify/hue/gen/go/hue/v1"
 	"github.com/hiddify/hue/internal/ent"
 	entagent "github.com/hiddify/hue/internal/ent/agent"
+	entevent "github.com/hiddify/hue/internal/ent/event"
 	entnode "github.com/hiddify/hue/internal/ent/node"
 	"github.com/hiddify/hue/internal/eventstore"
 )
@@ -263,10 +266,62 @@ func (s *AdminServer) DeleteAgent(ctx context.Context, req *huev1.DeleteAgentReq
 // ---------- Events ----------
 
 func (s *AdminServer) ListEvents(ctx context.Context, req *huev1.ListEventsRequest) (*huev1.ListEventsResponse, error) {
-	// Stub — real listing with filters lands in 2.4 alongside ConfigService
-	// since both need the same time-window helpers. For now return empty.
-	_ = req
-	return &huev1.ListEventsResponse{}, nil
+	limit := pageLimit(int(req.GetPageSize()))
+	q := s.db.Event.Query().Order(entevent.ByTs(entsql.OrderDesc())).Limit(limit)
+	if t := req.GetType(); t != huev1.EventType_EVENT_TYPE_UNSPECIFIED {
+		if s := EventTypeToString(t); s != "" {
+			q = q.Where(entevent.TypeEQ(entevent.Type(s)))
+		}
+	}
+	if v := req.GetClientId(); v != "" {
+		q = q.Where(entevent.ClientIDEQ(v))
+	}
+	if v := req.GetResellerId(); v != "" {
+		q = q.Where(entevent.ResellerIDEQ(v))
+	}
+	if t := req.GetSince(); t != nil {
+		q = q.Where(entevent.TsGTE(t.AsTime()))
+	}
+	if t := req.GetUntil(); t != nil {
+		q = q.Where(entevent.TsLTE(t.AsTime()))
+	}
+	rows, err := q.All(ctx)
+	if err != nil {
+		return nil, mapEntError(err)
+	}
+	out := make([]*huev1.Event, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, entEventToProto(r))
+	}
+	return &huev1.ListEventsResponse{Events: out}, nil
+}
+
+func (s *AdminServer) StreamEvents(req *huev1.StreamEventsRequest, stream grpc.ServerStreamingServer[huev1.Event]) error {
+	filter := eventstore.Filter{
+		ClientID:   req.GetClientId(),
+		ResellerID: req.GetResellerId(),
+	}
+	for _, t := range req.GetTypes() {
+		if s := EventTypeToString(t); s != "" {
+			filter.Types = append(filter.Types, s)
+		}
+	}
+	_, ch, unsub := s.events.Subscribe(filter, int(req.GetBufferSize()))
+	defer unsub()
+	ctx := stream.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case e, ok := <-ch:
+			if !ok {
+				return nil
+			}
+			if err := stream.Send(eventFromStore(e)); err != nil {
+				return err
+			}
+		}
+	}
 }
 
 // Helper
