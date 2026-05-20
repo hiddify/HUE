@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package xray.app.proxyman.command;
+
+option go_package = "github.com/hiddify/hue/pkg/agents/xray/api/xray/app/proxyman/command";
+
+import "google/protobuf/any.proto";
+import "google/protobuf/empty.proto";
+import "xray/common/protocol/user.proto";
+
+service HandlerService {
+  rpc AlterInbound(AlterInboundRequest) returns (google.protobuf.Empty);
+}
+
+message AlterInboundRequest {
+  string tag = 1;
+  google.protobuf.Any operation = 2;
+}
+
+message AddUserOperation {
+  xray.common.protocol.User user = 1;
+}
+
+message RemoveUserOperation {
+  string email = 1;
+}

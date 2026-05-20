@@ -3,12 +3,19 @@ package xray_test
 import (
 	"context"
 	"errors"
+	"net"
 	"strings"
 	"sync/atomic"
 	"testing"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/types/known/emptypb"
+
 	"github.com/hiddify/hue/pkg/agents"
 	"github.com/hiddify/hue/pkg/agents/xray"
+	xraycmd "github.com/hiddify/hue/pkg/agents/xray/api/xray/app/proxyman/command"
 )
 
 // Compile-time assertion: the xray adapter implements agents.Agent.
@@ -332,10 +339,106 @@ func TestXray_MissingVarFailsLoudly(t *testing.T) {
 	}
 }
 
+func TestXray_CapabilitiesIncludeProvisionWhenInboundSet(t *testing.T) {
+	t.Parallel()
+	c, err := xray.New(xray.Config{Endpoint: "127.0.0.1:0", Inbound: "vless-in"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer c.Close()
+	got := c.Capabilities()
+	if !got.Has(agents.CapProvision) {
+		t.Errorf("Capabilities = %v, want CapProvision set when Inbound is non-empty", got)
+	}
+	if !got.Has(agents.CapDisconnect) {
+		t.Errorf("Capabilities = %v, want CapDisconnect set when Inbound is non-empty", got)
+	}
+}
+
+func TestXray_AddRemoveUser_CallsHandlerService(t *testing.T) {
+	t.Parallel()
+
+	// Boot an in-process fake HandlerService.
+	fake := &fakeHandlerService{}
+	srv := grpc.NewServer()
+	xraycmd.RegisterHandlerServiceServer(srv, fake)
+	lis := bufconn.Listen(1 << 16)
+	go func() { _ = srv.Serve(lis) }()
+	t.Cleanup(srv.GracefulStop)
+
+	dialOpts := []grpc.DialOption{
+		grpc.WithContextDialer(func(_ context.Context, _ string) (net.Conn, error) {
+			return lis.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	}
+
+	c, err := xray.New(xray.Config{
+		Endpoint: "passthrough://buf",
+		Inbound:  "vless-in",
+	}, xray.WithDialOption(dialOpts...))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer c.Close()
+
+	ctx := context.Background()
+	u := agents.User{ID: "11111111-2222-3333-4444-555555555555", Tag: "alice@test"}
+
+	if err := c.AddUser(ctx, u, ""); err != nil {
+		t.Fatalf("AddUser: %v", err)
+	}
+	if fake.addCalls.Load() != 1 {
+		t.Errorf("AddUser: AlterInbound calls = %d, want 1", fake.addCalls.Load())
+	}
+	if got := fake.lastTag.Load(); got != "vless-in" {
+		t.Errorf("AddUser: inbound tag = %q, want %q", got, "vless-in")
+	}
+
+	if err := c.RemoveUser(ctx, u); err != nil {
+		t.Fatalf("RemoveUser: %v", err)
+	}
+	if fake.removeCalls.Load() != 1 {
+		t.Errorf("RemoveUser: AlterInbound calls = %d, want 1", fake.removeCalls.Load())
+	}
+}
+
+func TestXray_AddUserUnsupportedWithoutInbound(t *testing.T) {
+	t.Parallel()
+	c, err := xray.New(xray.Config{Endpoint: "127.0.0.1:0"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer c.Close()
+	if err := c.AddUser(context.Background(), agents.User{}, ""); !errors.Is(err, agents.ErrUnsupported) {
+		t.Fatalf("AddUser without Inbound: got %v, want ErrUnsupported", err)
+	}
+}
+
 // ----- helpers -----
 
 func stubSyncConfig(snap agents.ConfigSnapshot, err error) agents.SyncConfigFunc {
 	return func(_ context.Context, _ string) (agents.ConfigSnapshot, error) {
 		return snap, err
 	}
+}
+
+// fakeHandlerService records AlterInbound calls and classifies them by
+// operation type for assertion.
+type fakeHandlerService struct {
+	xraycmd.UnimplementedHandlerServiceServer
+	addCalls    atomic.Int32
+	removeCalls atomic.Int32
+	lastTag     atomic.Value // stores string
+}
+
+func (f *fakeHandlerService) AlterInbound(_ context.Context, req *xraycmd.AlterInboundRequest) (*emptypb.Empty, error) {
+	f.lastTag.Store(req.GetTag())
+	typeURL := req.GetOperation().GetTypeUrl()
+	if strings.Contains(typeURL, "AddUserOperation") {
+		f.addCalls.Add(1)
+	} else if strings.Contains(typeURL, "RemoveUserOperation") {
+		f.removeCalls.Add(1)
+	}
+	return &emptypb.Empty{}, nil
 }

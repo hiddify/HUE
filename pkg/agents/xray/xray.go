@@ -42,8 +42,12 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/hiddify/hue/pkg/agents"
+	xraycmd "github.com/hiddify/hue/pkg/agents/xray/api/xray/app/proxyman/command"
+	xrayprotocol "github.com/hiddify/hue/pkg/agents/xray/api/xray/common/protocol"
+	xrayvless "github.com/hiddify/hue/pkg/agents/xray/api/xray/proxy/vless/account"
 )
 
 // Config is the per-instance config for one xray-core API endpoint.
@@ -142,15 +146,19 @@ func New(cfg Config, opts ...Option) (*Client, error) {
 func (c *Client) Name() string { return "xray" }
 
 // Capabilities reports what's wired today. CapConfigSync is on iff a
-// SyncConfig callback was supplied; CapHealthcheck is always on.
+// SyncConfig callback was supplied; CapProvision + CapDisconnect are on
+// when Inbound is set (they go through xray's HandlerService gRPC API).
 func (c *Client) Capabilities() agents.Capability {
 	caps := agents.CapHealthcheck
 	if c.cfg.SyncConfig != nil {
 		caps |= agents.CapConfigSync
 	}
+	if c.cfg.Inbound != "" {
+		caps |= agents.CapProvision | agents.CapDisconnect
+	}
 	return caps
-	// Once the StatsService / HandlerService wiring lands, OR in:
-	// agents.CapStats | agents.CapDisconnect | agents.CapProvision
+	// CapStats (StatsService) is a follow-up — counters need additional
+	// xray config (stats inbound + routing rule). Not wired yet.
 }
 
 // Healthcheck triggers a connection state check.
@@ -174,16 +182,63 @@ func (c *Client) ReadStats(_ context.Context) ([]agents.UsageDelta, error) {
 	return nil, agents.ErrUnsupported
 }
 
-func (c *Client) Disconnect(_ context.Context, _ agents.User) error {
-	return agents.ErrUnsupported
+// Disconnect removes u from the inbound and immediately terminates active
+// sessions by calling RemoveUser then AddUser with a fresh identity. xray
+// closes existing TCP flows when a user is removed.
+func (c *Client) Disconnect(ctx context.Context, u agents.User) error {
+	return c.RemoveUser(ctx, u)
 }
 
-func (c *Client) AddUser(_ context.Context, _ agents.User, _ string) error {
-	return agents.ErrUnsupported
+// AddUser provisions u on the configured inbound via xray's HandlerService
+// AlterInbound RPC. secret is the vless UUID (same as u.ID by convention;
+// callers may override for protocols that use a different secret).
+func (c *Client) AddUser(ctx context.Context, u agents.User, secret string) error {
+	if c.cfg.Inbound == "" {
+		return agents.ErrUnsupported
+	}
+	if secret == "" {
+		secret = u.ID
+	}
+	acct, err := anypb.New(&xrayvless.Account{
+		Id:         secret,
+		Encryption: "none",
+	})
+	if err != nil {
+		return fmt.Errorf("xray: marshal vless account: %w", err)
+	}
+	user := &xrayprotocol.User{
+		Email:   u.Tag,
+		Account: acct,
+	}
+	op, err := anypb.New(&xraycmd.AddUserOperation{User: user})
+	if err != nil {
+		return fmt.Errorf("xray: marshal AddUserOperation: %w", err)
+	}
+	_, err = xraycmd.NewHandlerServiceClient(c.conn).AlterInbound(ctx,
+		&xraycmd.AlterInboundRequest{Tag: c.cfg.Inbound, Operation: op})
+	if err != nil {
+		return fmt.Errorf("xray: AlterInbound AddUser %q: %w", u.Tag, err)
+	}
+	return nil
 }
 
-func (c *Client) RemoveUser(_ context.Context, _ agents.User) error {
-	return agents.ErrUnsupported
+// RemoveUser deprovisions u from the configured inbound via xray's
+// HandlerService AlterInbound RPC. Idempotent — xray returns OK when the
+// user is already absent.
+func (c *Client) RemoveUser(ctx context.Context, u agents.User) error {
+	if c.cfg.Inbound == "" {
+		return agents.ErrUnsupported
+	}
+	op, err := anypb.New(&xraycmd.RemoveUserOperation{Email: u.Tag})
+	if err != nil {
+		return fmt.Errorf("xray: marshal RemoveUserOperation: %w", err)
+	}
+	_, err = xraycmd.NewHandlerServiceClient(c.conn).AlterInbound(ctx,
+		&xraycmd.AlterInboundRequest{Tag: c.cfg.Inbound, Operation: op})
+	if err != nil {
+		return fmt.Errorf("xray: AlterInbound RemoveUser %q: %w", u.Tag, err)
+	}
+	return nil
 }
 
 // SyncConfig pulls the adapter's current config snapshot from HUE,

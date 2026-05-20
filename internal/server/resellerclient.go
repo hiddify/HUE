@@ -21,10 +21,8 @@ import (
 // ResellerClientServer — Reseller (or Owner) manages their Clients +
 // reads UsagePlans + sees available nodes.
 //
-// Client passwords come in plaintext in the request; phase 2.3 wires
-// AES-GCM encryption. For now this server stores `password` directly as
-// `password_ciphertext` bytes — placeholder until 2.3 lands. Empty
-// passwords are stored empty (clients with non-password auth only).
+// Client passwords are AES-256-GCM encrypted at rest (auth.Encrypt).
+// Empty passwords are stored empty (clients with non-password auth only).
 type ResellerClientServer struct {
 	huev1.UnimplementedResellerClientServiceServer
 

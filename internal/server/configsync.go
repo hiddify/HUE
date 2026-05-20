@@ -20,6 +20,7 @@ import (
 	"github.com/hiddify/hue/internal/ent"
 	entagent "github.com/hiddify/hue/internal/ent/agent"
 	entsubscriber "github.com/hiddify/hue/internal/ent/subscriber"
+	entusagereport "github.com/hiddify/hue/internal/ent/usagereport"
 	"github.com/hiddify/hue/pkg/version"
 )
 
@@ -133,11 +134,51 @@ func (s *ConfigServer) Heartbeat(ctx context.Context, req *huev1.HeartbeatReques
 	if err != nil {
 		return nil, mapEntError(err)
 	}
-	// disconnect_client_ids = clients in QUOTA_USED / SUSPENDED status
-	// the agent should drop. Computed in phase 2.7's engine integration;
-	// today returns empty list (the per-ReportUsage decision already
-	// returns ShouldDisconnect).
-	return &huev1.HeartbeatResponse{}, nil
+	// Return clients on this node that are suspended or quota-exhausted so
+	// the agent can disconnect them immediately (belt-and-suspenders on top
+	// of the per-ReportUsage ShouldDisconnect signal).
+	nodeID, err := uuid.Parse(req.GetNodeId())
+	if err != nil {
+		// Non-fatal: best-effort — return empty list rather than failing.
+		return &huev1.HeartbeatResponse{}, nil
+	}
+
+	// Step 1: distinct client IDs that have ever reported usage on this node.
+	var clientIDStrs []string
+	err = s.db.UsageReport.Query().
+		Where(entusagereport.NodeID(nodeID)).
+		Unique(true).
+		Select(entusagereport.FieldClientID).
+		Scan(ctx, &clientIDStrs)
+	if err != nil || len(clientIDStrs) == 0 {
+		return &huev1.HeartbeatResponse{}, nil
+	}
+	clientIDs := make([]uuid.UUID, 0, len(clientIDStrs))
+	for _, s := range clientIDStrs {
+		if id, err := uuid.Parse(s); err == nil {
+			clientIDs = append(clientIDs, id)
+		}
+	}
+
+	// Step 2: among those, find ones in a disconnectable status.
+	subs, err := s.db.Subscriber.Query().
+		Where(
+			entsubscriber.IDIn(clientIDs...),
+			entsubscriber.StatusIn(
+				entsubscriber.StatusSuspended,
+				entsubscriber.StatusQuotaUsed,
+			),
+		).
+		Select(entsubscriber.FieldID).
+		All(ctx)
+	if err != nil {
+		return &huev1.HeartbeatResponse{}, nil
+	}
+	ids := make([]string, 0, len(subs))
+	for _, sub := range subs {
+		ids = append(ids, sub.ID.String())
+	}
+	return &huev1.HeartbeatResponse{DisconnectClientIds: ids}, nil
 }
 
 // agentKindPrefix maps an AgentKind to its config-key prefix.

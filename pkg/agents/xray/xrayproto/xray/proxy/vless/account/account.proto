@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package xray.proxy.vless.account;
+
+option go_package = "github.com/hiddify/hue/pkg/agents/xray/api/xray/proxy/vless/account";
+
+message Account {
+  string id = 1;
+  string flow = 2;
+  string encryption = 3;
+}
