@@ -36,6 +36,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,6 +47,7 @@ import (
 
 	"github.com/hiddify/hue/pkg/agents"
 	xraycmd "github.com/hiddify/hue/pkg/agents/xray/api/xray/app/proxyman/command"
+	xraystats "github.com/hiddify/hue/pkg/agents/xray/api/xray/app/stats/command"
 	xrayprotocol "github.com/hiddify/hue/pkg/agents/xray/api/xray/common/protocol"
 	xrayvless "github.com/hiddify/hue/pkg/agents/xray/api/xray/proxy/vless/account"
 )
@@ -147,9 +149,10 @@ func (c *Client) Name() string { return "xray" }
 
 // Capabilities reports what's wired today. CapConfigSync is on iff a
 // SyncConfig callback was supplied; CapProvision + CapDisconnect are on
-// when Inbound is set (they go through xray's HandlerService gRPC API).
+// when Inbound is set; CapStats is always on (StatsService is always
+// reachable on the api inbound — operator must enable stats in xray config).
 func (c *Client) Capabilities() agents.Capability {
-	caps := agents.CapHealthcheck
+	caps := agents.CapHealthcheck | agents.CapStats
 	if c.cfg.SyncConfig != nil {
 		caps |= agents.CapConfigSync
 	}
@@ -157,8 +160,6 @@ func (c *Client) Capabilities() agents.Capability {
 		caps |= agents.CapProvision | agents.CapDisconnect
 	}
 	return caps
-	// CapStats (StatsService) is a follow-up — counters need additional
-	// xray config (stats inbound + routing rule). Not wired yet.
 }
 
 // Healthcheck triggers a connection state check.
@@ -178,8 +179,71 @@ func (c *Client) Healthcheck(ctx context.Context) error {
 	}
 }
 
-func (c *Client) ReadStats(_ context.Context) ([]agents.UsageDelta, error) {
-	return nil, agents.ErrUnsupported
+// ReadStats queries xray's StatsService for per-user traffic counters and
+// resets them atomically. Counter names follow xray's convention:
+//
+//	user>>><email>>>>traffic>>>uplink
+//	user>>><email>>>>traffic>>>downlink
+//
+// Only non-zero counters are returned. The caller (engine) should call
+// ReportUsage for each delta to persist and enforce quota.
+func (c *Client) ReadStats(ctx context.Context) ([]agents.UsageDelta, error) {
+	resp, err := xraystats.NewStatsServiceClient(c.conn).QueryStats(ctx,
+		&xraystats.QueryStatsRequest{Pattern: "user>>>", Reset_: true})
+	if err != nil {
+		return nil, fmt.Errorf("xray: QueryStats: %w", err)
+	}
+	// Aggregate per-user: collect uplink + downlink separately.
+	type pair struct{ up, down int64 }
+	byEmail := make(map[string]*pair)
+	for _, s := range resp.GetStat() {
+		email, dir, ok := parseStatName(s.GetName())
+		if !ok || s.GetValue() == 0 {
+			continue
+		}
+		p := byEmail[email]
+		if p == nil {
+			p = &pair{}
+			byEmail[email] = p
+		}
+		switch dir {
+		case "uplink":
+			p.up += s.GetValue()
+		case "downlink":
+			p.down += s.GetValue()
+		}
+	}
+	out := make([]agents.UsageDelta, 0, len(byEmail))
+	now := time.Now().UTC()
+	for email, p := range byEmail {
+		out = append(out, agents.UsageDelta{
+			User:     agents.User{Tag: email, Inbound: c.cfg.Inbound},
+			Upload:   p.up,
+			Download: p.down,
+			At:       now,
+		})
+	}
+	return out, nil
+}
+
+// parseStatName splits "user>>><email>>>>traffic>>>uplink" into
+// (email, "uplink", true). Returns ("","",false) for unrecognised names.
+func parseStatName(name string) (email, direction string, ok bool) {
+	// Expected: "user>>>" + email + ">>>traffic>>>" + dir
+	const prefix = "user>>>"
+	const trafficSep = ">>>traffic>>>"
+	if !strings.HasPrefix(name, prefix) {
+		return
+	}
+	rest := name[len(prefix):]
+	idx := strings.Index(rest, trafficSep)
+	if idx < 0 {
+		return
+	}
+	email = rest[:idx]
+	direction = rest[idx+len(trafficSep):]
+	ok = email != "" && (direction == "uplink" || direction == "downlink")
+	return
 }
 
 // Disconnect removes u from the inbound and immediately terminates active

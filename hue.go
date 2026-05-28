@@ -113,9 +113,14 @@ func BuildInfo() string {
 // and LoadConfig reads its contents into HUE_<KEY> before parsing.
 type Config struct {
 	// Network
-	Addr        string `env:"HUE_ADDR, default=:8443"`
-	TLSCertFile string `env:"HUE_TLS_CERT"`
-	TLSKeyFile  string `env:"HUE_TLS_KEY"`
+	Addr            string `env:"HUE_ADDR, default=:8443"`
+	TLSCertFile     string `env:"HUE_TLS_CERT"`
+	TLSKeyFile      string `env:"HUE_TLS_KEY"`
+	// MTLSClientCAFile is the path to a PEM CA file whose subjects are
+	// allowed as agent clients. When set (and TLS is also enabled), HUE
+	// requires and verifies client certificates on every connection.
+	// Agents must present a cert signed by this CA via AgentDialOption.
+	MTLSClientCAFile string `env:"HUE_MTLS_CLIENT_CA"`
 
 	// Database
 	DatabaseURL  string `env:"HUE_DB_URL, required"`
@@ -386,15 +391,24 @@ func Run(ctx context.Context, cfg *Config, logger *slog.Logger) error {
 	}
 
 	if cfg.TLSCertFile != "" && cfg.TLSKeyFile != "" {
-		cert, err := tls.LoadX509KeyPair(cfg.TLSCertFile, cfg.TLSKeyFile)
+		serverCert, err := tls.LoadX509KeyPair(cfg.TLSCertFile, cfg.TLSKeyFile)
 		if err != nil {
 			return fmt.Errorf("load tls: %w", err)
 		}
-		httpSrv.TLSConfig = &tls.Config{
-			Certificates: []tls.Certificate{cert},
+		tlsCfg := &tls.Config{
+			Certificates: []tls.Certificate{serverCert},
 			MinVersion:   tls.VersionTLS12,
 			NextProtos:   []string{"h2", "http/1.1"},
 		}
+		clientCAs, err := auth.LoadMTLSClientCA(cfg.MTLSClientCAFile)
+		if err != nil {
+			return fmt.Errorf("load mtls client CA: %w", err)
+		}
+		auth.ApplyMTLS(tlsCfg, clientCAs)
+		if clientCAs != nil {
+			logger.Info("mTLS enabled", "ca", cfg.MTLSClientCAFile)
+		}
+		httpSrv.TLSConfig = tlsCfg
 	}
 
 	ln, err := net.Listen("tcp", cfg.Addr)

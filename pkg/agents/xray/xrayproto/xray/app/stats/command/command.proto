@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package xray.app.stats.command;
+
+option go_package = "github.com/hiddify/hue/pkg/agents/xray/api/xray/app/stats/command";
+
+service StatsService {
+  rpc GetStats(GetStatsRequest) returns (GetStatsResponse);
+  rpc QueryStats(QueryStatsRequest) returns (QueryStatsResponse);
+}
+
+message GetStatsRequest {
+  string name  = 1;
+  bool   reset = 2;
+}
+
+message GetStatsResponse {
+  Stat stat = 1;
+}
+
+message QueryStatsRequest {
+  string pattern = 1;
+  bool   reset   = 2;
+}
+
+message QueryStatsResponse {
+  repeated Stat stat = 1;
+}
+
+message Stat {
+  string name  = 1;
+  int64  value = 2;
+}

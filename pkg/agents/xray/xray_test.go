@@ -16,6 +16,7 @@ import (
 	"github.com/hiddify/hue/pkg/agents"
 	"github.com/hiddify/hue/pkg/agents/xray"
 	xraycmd "github.com/hiddify/hue/pkg/agents/xray/api/xray/app/proxyman/command"
+	xraystats "github.com/hiddify/hue/pkg/agents/xray/api/xray/app/stats/command"
 )
 
 // Compile-time assertion: the xray adapter implements agents.Agent.
@@ -51,8 +52,11 @@ func TestXray_CapabilitiesReflectWiring(t *testing.T) {
 		t.Fatalf("New (bare): %v", err)
 	}
 	defer bare.Close()
-	if got := bare.Capabilities(); got != agents.CapHealthcheck {
-		t.Errorf("bare Capabilities = %v, want CapHealthcheck only", got)
+	if got := bare.Capabilities(); !got.Has(agents.CapHealthcheck) || !got.Has(agents.CapStats) {
+		t.Errorf("bare Capabilities = %v, want CapHealthcheck|CapStats", got)
+	}
+	if got := bare.Capabilities(); got.Has(agents.CapProvision) || got.Has(agents.CapConfigSync) {
+		t.Errorf("bare Capabilities = %v, want no CapProvision/CapConfigSync without Inbound/SyncConfig", got)
 	}
 
 	wired, err := xray.New(xray.Config{
@@ -423,6 +427,52 @@ func stubSyncConfig(snap agents.ConfigSnapshot, err error) agents.SyncConfigFunc
 	}
 }
 
+func TestXray_ReadStats_ParsesCounters(t *testing.T) {
+	fake := &fakeStatsService{stats: []*xraystats.Stat{
+		{Name: "user>>>alice@test>>>traffic>>>uplink", Value: 1024},
+		{Name: "user>>>alice@test>>>traffic>>>downlink", Value: 4096},
+		{Name: "user>>>bob@test>>>traffic>>>uplink", Value: 512},
+		{Name: "user>>>bob@test>>>traffic>>>downlink", Value: 0}, // zero — skipped
+		{Name: "inbound>>>ignored>>>traffic>>>uplink", Value: 99}, // non-user — skipped
+	}}
+	srv := grpc.NewServer()
+	xraystats.RegisterStatsServiceServer(srv, fake)
+	lis := bufconn.Listen(1 << 16)
+	go func() { _ = srv.Serve(lis) }()
+	t.Cleanup(srv.GracefulStop)
+
+	c, err := xray.New(xray.Config{Endpoint: "passthrough://buf"},
+		xray.WithDialOption(
+			grpc.WithContextDialer(func(_ context.Context, _ string) (net.Conn, error) { return lis.Dial() }),
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer c.Close()
+
+	deltas, err := c.ReadStats(context.Background())
+	if err != nil {
+		t.Fatalf("ReadStats: %v", err)
+	}
+	byTag := make(map[string]agents.UsageDelta)
+	for _, d := range deltas {
+		byTag[d.User.Tag] = d
+	}
+	if got := byTag["alice@test"]; got.Upload != 1024 || got.Download != 4096 {
+		t.Errorf("alice: up=%d down=%d, want 1024/4096", got.Upload, got.Download)
+	}
+	if got := byTag["bob@test"]; got.Upload != 512 || got.Download != 0 {
+		t.Errorf("bob: up=%d down=%d, want 512/0", got.Upload, got.Download)
+	}
+	if _, ok := byTag[""]; ok {
+		t.Error("non-user stat should be filtered out")
+	}
+	if fake.resetCalled.Load() != 1 {
+		t.Errorf("QueryStats reset calls = %d, want 1", fake.resetCalled.Load())
+	}
+}
+
 // fakeHandlerService records AlterInbound calls and classifies them by
 // operation type for assertion.
 type fakeHandlerService struct {
@@ -441,4 +491,17 @@ func (f *fakeHandlerService) AlterInbound(_ context.Context, req *xraycmd.AlterI
 		f.removeCalls.Add(1)
 	}
 	return &emptypb.Empty{}, nil
+}
+
+type fakeStatsService struct {
+	xraystats.UnimplementedStatsServiceServer
+	stats       []*xraystats.Stat
+	resetCalled atomic.Int32
+}
+
+func (f *fakeStatsService) QueryStats(_ context.Context, req *xraystats.QueryStatsRequest) (*xraystats.QueryStatsResponse, error) {
+	if req.GetReset_() {
+		f.resetCalled.Add(1)
+	}
+	return &xraystats.QueryStatsResponse{Stat: f.stats}, nil
 }
