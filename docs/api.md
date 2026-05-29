@@ -99,7 +99,8 @@ see or modify peers; only its sub-tree.
 | `StreamEvents`   | `GET /v1/events:stream` (server-streaming over chunked HTTP) |
 | `HealthCheck`    | `GET /healthz` (also implements `grpc.health.v1.Health`) |
 
-`StreamEvents` currently returns an empty stream — phase-2 stub.
+`StreamEvents` is live — server-sent fan-out from the eventstore subscriber
+bus. Supports filters: `types`, `client_id`, `reseller_id`, `buffer_size`.
 
 ### AuthAdminService — Owner only
 
@@ -240,6 +241,47 @@ grpcurl -insecure \
         -d '{"report":{"client_id":"…","upload":1048576,"download":4194304}}' \
         localhost:8443 hue.v1.UsageService/ReportUsage
 ```
+
+## Phase 3 additions
+
+### Key rotation environment
+
+| Env var | Purpose |
+|---|---|
+| `HUE_ENC_KEYS` | Multi-key keyring: `"1:<hex32>,2:<hex32>"`. Takes precedence over `HUE_PASSWORD_ENC_KEY`. |
+| `HUE_ENC_KEY_CURRENT` | ID of the active encryption key (must appear in `HUE_ENC_KEYS`). |
+| `HUE_PASSWORD_ENC_KEY` | Legacy single-key (32-byte hex). Used as key ID 1 when `HUE_ENC_KEYS` is unset. |
+
+See [auth.md → Key rotation](auth.md#key-rotation-hue_enc_keys) for the rotation procedure.
+
+### mTLS
+
+| Env var | Purpose |
+|---|---|
+| `HUE_MTLS_CLIENT_CA` | PEM CA file. When set + TLS is enabled, HUE requires client certificates (`RequireAndVerifyClientCert`). |
+
+Agents provide their client cert via `agents.AgentDialOption(cert, key, caPEM)`.
+See [auth.md → mTLS](auth.md#mtls--mutual-tls-for-agent-connections).
+
+### DNS-01 ACME
+
+`RequestACME` supports DNS-01 in addition to HTTP-01. Pass a
+`DNS01Provider` (built via `cert.NewDNS01Provider("cloudflare" | "digitalocean" | "exec")`).
+Required for wildcard certs or air-gapped nodes. See
+[certificates.md → DNS-01 ACME](certificates.md#dns-01-acme).
+
+### xray StatsService
+
+`xray.Client.ReadStats` is now fully implemented: it calls xray-core's
+`StatsService.QueryStats` with `pattern="user>>>"` + `reset=true`,
+parses per-user upload/download deltas, and returns `[]agents.UsageDelta`.
+No stub — requires xray to have `api` + `stats` in its config.
+
+### RADIUS adapter
+
+`pkg/agents/radius/` is a compilable scaffold (UDP listener + SyncConfig
+snapshot cache). Packet decode stubs need a RADIUS codec — see
+[agents.md → RADIUS](agents.md#radius-adapter-scaffold).
 
 ## Error model
 

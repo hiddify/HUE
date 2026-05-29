@@ -420,6 +420,83 @@ curl -sk -H "Authorization: Bearer $RES_JWT" \
 
 ---
 
+## Encryption key rotation
+
+HUE stores client passwords, private keys, and signing keys encrypted
+with AES-256-GCM. To rotate the key without downtime:
+
+### 1. Add the new key alongside the old one
+
+```bash
+# Generate new key material
+NEW_KEY=$(openssl rand -hex 32)
+OLD_KEY=<existing HUE_PASSWORD_ENC_KEY value>
+
+# Switch from single-key to multi-key format:
+# keyID 1 → the old key, keyID 2 → the new key, current = 2
+export HUE_ENC_KEYS="1:${OLD_KEY},2:${NEW_KEY}"
+export HUE_ENC_KEY_CURRENT=2
+export HUE_PASSWORD_ENC_KEY=   # clear when HUE_ENC_KEYS is set
+```
+
+Restart HUE. New rows use key 2. Old rows still decrypt via key 1.
+
+### 2. Re-encrypt existing rows (optional)
+
+Run a migration job that calls `auth.Reencrypt(ciphertext, oldKeyID)`
+for every encrypted column in the DB. `Reencrypt` is idempotent — it
+returns the input unchanged when `oldKeyID` is already `current`.
+
+### 3. Retire the old key
+
+Once every row is re-encrypted, remove `,1:<oldKey>` from
+`HUE_ENC_KEYS` and restart. Any row still encrypted with key 1 will
+fail decryption with a clear error rather than silently using the
+wrong key.
+
+See [auth.md → Key rotation](auth.md#key-rotation-hue_enc_keys) for the
+full wire format and API reference.
+
+---
+
+## Enable mTLS for agents
+
+For zero-trust environments, require agents to present a client
+certificate in addition to their API key.
+
+### Server side
+
+```bash
+# Add to HUE's env:
+HUE_MTLS_CLIENT_CA=/etc/hue/agent-ca.pem   # PEM CA that signs agent certs
+HUE_TLS_CERT=/etc/hue/server.pem            # also required — mTLS implies TLS
+HUE_TLS_KEY=/etc/hue/server.key
+```
+
+Restart HUE. Startup log will show: `mTLS enabled ca=/etc/hue/agent-ca.pem`.
+
+### Agent side (xray adapter)
+
+```go
+import (
+    "github.com/hiddify/hue/pkg/agents"
+    "github.com/hiddify/hue/pkg/agents/xray"
+)
+
+opt, err := agents.AgentDialOption(
+    "/etc/agent/client.pem",   // cert signed by agent-ca.pem
+    "/etc/agent/client.key",
+    "/etc/hue/server-ca.pem",  // CA that signed HUE's server cert
+)
+
+client, err := xray.New(xray.Config{...}, xray.WithDialOption(opt))
+```
+
+See [auth.md → mTLS](auth.md#mtls--mutual-tls-for-agent-connections) for
+cert hierarchy recommendations.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
@@ -434,6 +511,9 @@ curl -sk -H "Authorization: Bearer $RES_JWT" \
 | Agent gets `Unimplemented` from `RequestACME` | `HUE_ACME_CONTACT_EMAIL` empty | Set the env, restart |
 | `ReportUsage` always says `accepted: false` | Client has no active `UsagePlan` row | Create one via direct ent / SQL; CreateUsagePlan RPC is on the roadmap |
 | Disconnect storms after a brief outage | Many Clients tripped `max_concurrent` as their apps reconnected from new IPs | Bump `HUE_CONCURRENT_WINDOW` (default 5 min) or `max_concurrent` per Client |
+| `Decrypt: key ID N not in keyring` | Old ciphertext uses a key removed from `HUE_ENC_KEYS` | Re-add the old key before removing it; run `Reencrypt` migration first |
+| Agent gets `certificate required` TLS error | mTLS enabled server-side but agent dialing without client cert | Use `agents.AgentDialOption(cert, key, ca)` + `xray.WithDialOption` |
+| `no valid PEM certificate found in CA file` at startup | `HUE_MTLS_CLIENT_CA` path is wrong or not PEM | Verify path; check file starts with `-----BEGIN CERTIFICATE-----` |
 
 ---
 

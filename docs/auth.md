@@ -228,5 +228,129 @@ window.
 | `api_keys.hash` | Argon2id | n/a |
 
 Wire format for every AES-GCM column: `[key_id (1 byte)] [nonce (12)]
-[sealed]`. The `key_id` byte reserves bandwidth for rotation; phase 3
-adds a multi-key registry.
+[sealed]`. The `key_id` byte identifies which key in the keyring was
+used, enabling zero-downtime key rotation.
+
+## Key rotation (`HUE_ENC_KEYS`)
+
+HUE's encryption layer supports a named keyring so old ciphertexts can
+be decrypted with the old key while new ones are encrypted with the
+current key.
+
+### Single-key setup (simple)
+
+```bash
+# 32 random bytes hex-encoded
+HUE_PASSWORD_ENC_KEY=$(openssl rand -hex 32)
+```
+
+All rows encrypted with `keyID=1`. Decryption reads `keyID=1` from the
+ciphertext header and picks this key.
+
+### Multi-key setup (rotation-ready)
+
+```bash
+# Format: "id:hexkey,id:hexkey" — id must be 1–255
+HUE_ENC_KEYS="1:$(openssl rand -hex 32),2:$(openssl rand -hex 32)"
+HUE_ENC_KEY_CURRENT=2   # new rows use key 2; old rows still decrypt via key 1
+HUE_PASSWORD_ENC_KEY=   # leave empty when HUE_ENC_KEYS is set
+```
+
+Rules:
+- `HUE_ENC_KEYS` takes precedence over `HUE_PASSWORD_ENC_KEY`.
+- `HUE_ENC_KEY_CURRENT` must appear in `HUE_ENC_KEYS`.
+- Key ID `0` is reserved — means "disabled / passthrough"; never use it
+  in a production keyring.
+- Key IDs are arbitrary 1-byte integers (1–255); they don't need to be
+  sequential.
+
+### Rotation procedure
+
+1. **Add a new key** — append `,3:<hex>` to `HUE_ENC_KEYS` and set
+   `HUE_ENC_KEY_CURRENT=3`. Restart HUE. New writes use key 3; old
+   rows still decrypt via their stored `keyID`.
+
+2. **Re-encrypt old rows** (optional, background job) — call
+   `internal/auth.Reencrypt(ciphertext, oldKeyID)` per row. It
+   decrypts with the old key and re-encrypts with the current key. If
+   the row is already using the current key it's a no-op.
+
+3. **Retire old key** — once every ciphertext in the DB has been
+   re-encrypted, remove key 1 (and 2) from `HUE_ENC_KEYS`. Any attempt
+   to decrypt a row still using the old key returns an error rather than
+   silently corrupting data.
+
+`internal/auth.Encrypt`, `Decrypt`, and `Reencrypt` are the canonical
+API — adapters and server handlers should never call `crypto/aes`
+directly.
+
+## mTLS — mutual TLS for agent connections
+
+By default, HUE requires agents to authenticate via API key (Bearer
+header). For environments that want **certificate-level** authentication
+on top (defense-in-depth, or zero-trust policy enforcement at the TLS
+layer), HUE supports mutual TLS.
+
+### Server configuration
+
+```bash
+# Path to a PEM CA whose subject keys are allowed as agent clients.
+# When set (and HUE_TLS_CERT + HUE_TLS_KEY are also set), HUE requires
+# and verifies client certificates on every incoming connection.
+HUE_MTLS_CLIENT_CA=/etc/hue/agent-ca.pem
+```
+
+The env is read by `hue.Run()` → `auth.LoadMTLSClientCA` →
+`auth.ApplyMTLS`. When the CA file is present, the TLS config gains:
+
+```
+tls.Config{
+    ClientCAs:  <pool from HUE_MTLS_CLIENT_CA>,
+    ClientAuth: tls.RequireAndVerifyClientCert,
+}
+```
+
+HUE logs `mTLS enabled ca=<path>` at startup.
+
+### Agent configuration
+
+Use `agents.AgentDialOption` from `pkg/agents/mtls.go`:
+
+```go
+opt, err := agents.AgentDialOption(
+    "/etc/agent/client.pem",   // agent certificate (signed by agent CA)
+    "/etc/agent/client.key",   // matching private key
+    "/etc/hue/server-ca.pem",  // CA that signed HUE's server certificate
+)
+if err != nil { /* handle */ }
+
+client, err := xray.New(xray.Config{...}, xray.WithDialOption(opt))
+```
+
+The agent presents its client cert; HUE verifies it against
+`HUE_MTLS_CLIENT_CA`. Both sides verify each other — mutual TLS.
+
+### Certificate hierarchy (recommended)
+
+```
+Root CA
+├── HUE server cert  (SAN: hue.example.com)
+│     issued by: HUE server CA  (can be Root or intermediate)
+└── Agent client cert (CN: fra-1-xray)
+      issued by: Agent CA  (HUE_MTLS_CLIENT_CA)
+```
+
+Separate server CA and agent CA so agent cert compromise doesn't allow
+impersonating the server. Use any standard CA toolchain (step-ca,
+cfssl, openssl).
+
+### mTLS + API key
+
+mTLS and API key auth are **complementary**, not alternatives. With both
+in place:
+- The TLS handshake rejects agents without a valid client cert.
+- The interceptor verifies the `Authorization: Bearer agt_…` header for
+  per-agent identity and permission.
+
+Dropping mTLS doesn't remove the API key check; API key auth alone is
+adequate for most deployments.

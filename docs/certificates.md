@@ -10,7 +10,7 @@ keys are AES-256-GCM-encrypted at rest using `HUE_PASSWORD_ENC_KEY`.
 |---------------|----------------------------------------------------|-------|
 | `IMPORTED`    | Operator uploads via `AddCertificate`              | Validated against `ParseAndValidate` before accept |
 | `SELF_SIGNED` | HUE generates via `internal/cert.SelfSigned`       | 30-year, ECDSA-P-256, SAN list covers all domains incl. wildcards + IPs |
-| `ACME`        | Let's Encrypt via `RequestACME` (lego/v4, HTTP-01) | HUE serves the challenge on its own listener at `/.well-known/acme-challenge/` |
+| `ACME`        | Let's Encrypt via `RequestACME` (lego/v4)          | HTTP-01 (built-in) or DNS-01 (via `NewDNS01Provider`) |
 
 ## Domain matching
 
@@ -132,6 +132,62 @@ curl -k -H "Authorization: Bearer $OWNER" -H 'Content-Type: application/json' \
 The request's `contact_email` overrides the env default when set. The reply is the
 saved `DomainCertificate` row (private key redacted unless Owner).
 
-For air-gapped or DNS-01-only environments, keep using an external
-ACME client (`acme.sh`, `certbot`, `lego`) and `AddCertificate` the
-result.
+## DNS-01 ACME
+
+For wildcard certs (`*.example.com`) or environments where port 80 is
+not publicly reachable, use DNS-01 instead of HTTP-01.
+
+`internal/cert.NewDNS01Provider(name)` returns a lego `challenge.Provider`
+that sets/removes TXT records via the named DNS service. Pass it as
+`ACMEConfig.DNS01Provider` — it takes precedence over HTTP-01.
+
+| Provider name   | Required env vars |
+|-----------------|--------------------------------------------------|
+| `cloudflare`    | `CLOUDFLARE_DNS_API_TOKEN` (or `CLOUDFLARE_EMAIL` + `CLOUDFLARE_API_KEY`) |
+| `digitalocean`  | `DO_AUTH_TOKEN` |
+| `exec`          | `EXEC_PATH` — path to a script that accepts `present`/`cleanup` as first arg |
+
+For route53 and gcloud, add the corresponding `github.com/go-acme/lego/v4/providers/dns/{route53,gcloud}` module, import it, and add a case in `NewDNS01Provider`.
+
+### Using DNS-01 via the Go API
+
+```go
+import "github.com/hiddify/hue/internal/cert"
+
+os.Setenv("CLOUDFLARE_DNS_API_TOKEN", "cf-token-here")
+provider, err := cert.NewDNS01Provider("cloudflare")
+if err != nil { /* handle */ }
+
+result, err := cert.RequestACME(cert.ACMEConfig{
+    ContactEmail:  "ops@example.com",
+    DNS01Provider: provider,   // takes precedence over Challenger
+}, []string{"*.example.com", "example.com"})
+```
+
+### Using DNS-01 via the `exec` hook
+
+For any DNS provider not natively supported, write a shell script:
+
+```bash
+#!/bin/bash
+# EXEC_PATH=/usr/local/bin/hue-dns-hook
+action="$1"  # "present" or "cleanup"
+domain="$2"
+token="$3"
+key_auth="$4"
+txt="_acme-challenge.$domain"
+
+case "$action" in
+  present) dns-tool add-txt "$txt" "$key_auth" ;;
+  cleanup) dns-tool del-txt "$txt" "$key_auth" ;;
+esac
+```
+
+```bash
+export EXEC_PATH=/usr/local/bin/hue-dns-hook
+# Then pass "exec" to NewDNS01Provider or set HUE_ACME_DNS01_PROVIDER=exec
+```
+
+For air-gapped environments with no external HTTP reachability, use the
+`exec` provider with a custom DNS hook, or import the cert from an
+external ACME client (`acme.sh`, `certbot`) via `AddCertificate`.

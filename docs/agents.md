@@ -76,9 +76,111 @@ Output is fed to `ApplyConfigFunc` — typically:
 
 | Adapter | Source | Status |
 |---|---|---|
-| `pkg/agents/xray/` | xray.go, config.go | Renderer + SyncConfig working; Stats/Disconnect/Provision stubbed (need xray-core proto plumbing) |
-| `pkg/agents/wireguard/` | wireguard.go | Renderer + SyncConfig working; Stats/Disconnect/Provision stubbed (need `wg` exec wiring) |
+| `pkg/agents/xray/` | xray.go, config.go, renderer.go | SyncConfig + Renderer + AddUser/RemoveUser (AlterInbound) + ReadStats (StatsService) + Disconnect — fully wired |
+| `pkg/agents/wireguard/` | wireguard.go | SyncConfig + Renderer working; Stats/Disconnect/Provision stubbed (need `wg` exec wiring) |
+| `pkg/agents/radius/` | radius.go | Compilable scaffold — UDP listener wired, SyncConfig cache working; auth/accounting handlers are stubs pending codec dep |
 | `pkg/agents/template/` | template.go | Copy-paste skeleton; returns `ErrUnsupported` everywhere |
+
+## xray adapter
+
+The xray adapter (`pkg/agents/xray/`) talks to xray-core's gRPC admin
+API on two sub-interfaces:
+
+### HandlerService — user provisioning
+
+`AlterInbound` adds or removes users on the configured inbound without
+restarting xray:
+
+```go
+c, err := xray.New(xray.Config{
+    Endpoint: "127.0.0.1:10085",  // xray's api inbound host:port
+    Inbound:  "vless-in",          // inbound tag in xray's config
+    ServiceID: "<HUE service uuid>",
+    Renderer:  xray.XrayJSON{},
+    SyncConfig:  myHUESyncFunc,
+    ApplyConfig: myReloadFunc,
+})
+
+// Add — secret is the vless UUID (defaults to u.ID when empty)
+c.AddUser(ctx, agents.User{ID: uuid, Tag: "alice@example.com"}, "")
+
+// Remove (called by Disconnect too)
+c.RemoveUser(ctx, agents.User{Tag: "alice@example.com"})
+```
+
+The gRPC proto stubs live in
+`pkg/agents/xray/api/xray/app/proxyman/command/` (generated from
+`pkg/agents/xray/xrayproto/`). They mirror xray-core's public API wire
+format.
+
+### StatsService — traffic counters
+
+`ReadStats` queries xray's `StatsService.QueryStats` with
+`pattern="user>>>"` and `reset=true` (atomic read + reset). Counter
+names follow xray's convention:
+
+```
+user>>><email>>>>traffic>>>uplink
+user>>><email>>>>traffic>>>downlink
+```
+
+`ReadStats` aggregates upload + download per email address and returns
+`[]agents.UsageDelta`. The engine calls `ReportUsage` for each delta.
+Only non-zero counters are returned.
+
+```go
+deltas, err := c.ReadStats(ctx)
+for _, d := range deltas {
+    fmt.Println(d.User.Tag, d.Upload, d.Download)
+}
+```
+
+### Capabilities
+
+```
+CapHealthcheck | CapStats               — always set
+CapConfigSync                           — when SyncConfig callback is non-nil
+CapProvision | CapDisconnect            — when Inbound is non-empty
+```
+
+## RADIUS adapter (scaffold)
+
+`pkg/agents/radius/` is a compilable skeleton for a RADIUS
+authentication + accounting gateway. It opens real UDP sockets but the
+packet decode and credential-lookup logic are stubs — the TODOs in the
+source file mark exactly where to fill in:
+
+| TODO | What to add |
+|---|---|
+| `handleAuth` | Decode Access-Request (RFC 2865), look up username in `c.snapshot.Users`, PAP-verify password, write Access-Accept / Access-Reject |
+| `handleAccounting` | Decode Acct-Input-Octets / Acct-Output-Octets (RFC 2866), buffer deltas for `ReadStats` |
+| Codec dependency | Add `layeh.com/radius` (or equivalent) to `go.mod` once the network is available |
+
+### Usage today (skeleton mode)
+
+```go
+c, err := radius.New(radius.Config{
+    SharedSecret: "nas-secret",
+    AuthAddr:     "0.0.0.0:1812",
+    AcctAddr:     "0.0.0.0:1813",
+    SyncConfig:   myHUESyncFunc,  // optional — enables CapConfigSync
+})
+c.Listen()   // opens UDP sockets
+defer c.Close()
+
+// SyncConfig populates the local user snapshot
+changed, err := c.SyncConfig(ctx)
+```
+
+### mTLS with agents
+
+Every adapter that dials HUE's gRPC endpoint can enable mutual TLS via
+`agents.AgentDialOption` (see [auth.md → mTLS](auth.md#mtls--mutual-tls-for-agent-connections)):
+
+```go
+opt, err := agents.AgentDialOption(certFile, keyFile, caFile)
+client, err := xray.New(xray.Config{...}, xray.WithDialOption(opt))
+```
 
 ## Adding a new protocol
 
